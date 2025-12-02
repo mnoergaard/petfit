@@ -625,12 +625,29 @@ save_files %>%
 
 save_files %>%
   pwalk(function(ref_tacs_json, filename_json, ...) {
-    write_json(ref_tacs_json, 
+    write_json(ref_tacs_json,
                path = paste0(analysis_folder, "/", filename_json),
                pretty=TRUE)
   })
 ```
 
+## Updating Target TAC Files
+
+The reference region is removed from the target TAC files so it is not used as a target region during model fitting.
+
+```{r save-updated-target-tacs}
+# Get target TACs (excluding reference region) with filename info
+target_tac_files <- tac_data %>%
+  filter(region != ref_region_name)
+
+# Save updated combinedregions_tacs.tsv files (overwriting originals)
+target_tac_files %>%
+  group_by(filename) %>%
+  group_walk(~{
+    write_tsv(.x %>% select(-filename),
+              file = paste0(analysis_folder, "/", .y$filename))
+  })
+```
 
 ---
 

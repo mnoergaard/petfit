@@ -635,6 +635,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                         )
                                  )
                                ),
+
+                               # Multiple Starting Points
+                               h4("Multiple Starting Points"),
+                               p("Fit model multiple times with different starting parameters to avoid local minima."),
+                               numericInput("multstart_iter", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                                uiOutput("subset_validation_error")
                              ),
 
@@ -686,6 +692,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                        )
                                 )
                               ),
+
+                              # Multiple Starting Points
+                              h4("Multiple Starting Points"),
+                              p("Fit model multiple times with different starting parameters to avoid local minima."),
+                              numericInput("multstart_iter", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                               uiOutput("subset_validation_error")
                             ),
 
@@ -843,6 +855,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                         )
                                  )
                                ),
+
+                               # Multiple Starting Points
+                               h4("Multiple Starting Points"),
+                               p("Fit model multiple times with different starting parameters to avoid local minima."),
+                               numericInput("multstart_iter2", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                                uiOutput("subset_validation_error2")
                              ),
 
@@ -899,6 +917,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                        )
                                 )
                               ),
+
+                              # Multiple Starting Points
+                              h4("Multiple Starting Points"),
+                              p("Fit model multiple times with different starting parameters to avoid local minima."),
+                              numericInput("multstart_iter2", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                               uiOutput("subset_validation_error2")
                             ),
 
@@ -1072,6 +1096,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                         )
                                  )
                                ),
+
+                               # Multiple Starting Points
+                               h4("Multiple Starting Points"),
+                               p("Fit model multiple times with different starting parameters to avoid local minima."),
+                               numericInput("multstart_iter3", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                                uiOutput("subset_validation_error3")
                              ),
 
@@ -1131,10 +1161,16 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                        )
                                 )
                               ),
+
+                              # Multiple Starting Points
+                              h4("Multiple Starting Points"),
+                              p("Fit model multiple times with different starting parameters to avoid local minima."),
+                              numericInput("multstart_iter3", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
+
                               uiOutput("subset_validation_error3")
                             ),
 
-                             # refLogan selection panel  
+                             # refLogan selection panel
                              conditionalPanel(
                                condition = "input.button3 == 'refLogan'",
                                h4("t* Definition"),
