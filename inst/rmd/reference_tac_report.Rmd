@@ -14,8 +14,8 @@ params:
 <!-- For temporary debugging, this defines temporary parameters for the parameterised report -->
 
 ```{r}
-analysis_folder <- "/home/granville/Repositories/OpenNeuro/ds004869_mini/derivatives/petfit/Secondary_Analysis/"
-bids_dir <- "/home/granville/Repositories/OpenNeuro/ds004869_mini/"
+analysis_folder <- "/home/granville/Repositories/OpenNeuro/Demo/ds004869/derivatives/petfit/Secondary_Analysis/"
+bids_dir <- "/home/granville/Repositories/OpenNeuro/Demo/ds004869/"
 ```
 
 
@@ -497,26 +497,28 @@ ref_tac_fitdata <- ref_tac_data %>%
                                            "run", "pet")))) %>%
   nest(.key = "ref_tacs") 
 
-ref_tac_fitdata <- ref_tac_fitdata %>% 
+ref_tac_fitdata <- ref_tac_fitdata %>%
   mutate(ref_fit = map(ref_tacs, ~feng_1tc_tac(t_tac   = .x$frame_mid/60,
                                               tac     = .x$RefTAC,
-                                              weights = .x$weights)))
+                                              weights = .x$ref_weights)))
 
-ref_tac_preddata <- ref_tac_fitdata %>% 
-  mutate(ref_preds = map(ref_fit, ~.x$tacs %>% 
-                          rename(frame_mid = Time, 
+ref_tac_preddata <- ref_tac_fitdata %>%
+  mutate(ref_preds = map(ref_fit, ~.x$tacs %>%
+                          rename(frame_mid = Time,
                                  RefTAC = Reference,
-                                 RefTAC_fitted = Reference_fitted) %>% 
-                           mutate(frame_mid = frame_mid*60))) %>% 
-  select(-ref_fit) %>% 
-  mutate(ref_tacs = map2(ref_tacs, ref_preds, inner_join)) %>% 
-  mutate(ref_tacs = map(ref_tacs, ~.x %>% 
+                                 RefTAC_fitted = Reference_fitted) %>%
+                           mutate(frame_mid = frame_mid*60))) %>%
+  select(-ref_fit) %>%
+  mutate(ref_tacs = map2(ref_tacs, ref_preds, inner_join)) %>%
+  mutate(ref_tacs = map(ref_tacs, ~.x %>%
+                          select(-any_of("TAC")) %>%
                           rename(RefTAC_original = RefTAC,
-                                 RefTAC = RefTAC_fitted))) %>% 
-  select(-ref_preds) %>% 
+                                 RefTAC = RefTAC_fitted,
+                                 RefTAC_weights = ref_weights))) %>%
+  select(-ref_preds) %>%
   mutate(ref_tacs_json = map(1:n(), ~list(RefTAC = "Modelled reference TAC",
                                   RefTAC_original = "Original reference TAC",
-                                  ref_weights = "Weights used for reference TAC fitting")))
+                                  RefTAC_weights = "Weights used for reference TAC fitting")))
 
 ref_tac_pardata <- ref_tac_fitdata %>% 
   mutate(ref_pars = map(ref_fit, "par")) %>% 
@@ -558,26 +560,28 @@ ref_tac_fitdata <- ref_tac_data %>%
                                            "run", "pet")))) %>%
   nest(.key = "ref_tacs") 
 
-ref_tac_fitdata <- ref_tac_fitdata %>% 
+ref_tac_fitdata <- ref_tac_fitdata %>%
   mutate(ref_fit = map(ref_tacs, ~spline_tac(t_tac   = .x$frame_mid/60,
                                               tac     = .x$RefTAC,
-                                              weights = .x$weights)))
+                                              weights = .x$ref_weights)))
 
-ref_tac_preddata <- ref_tac_fitdata %>% 
-  mutate(ref_preds = map(ref_fit, ~.x$tacs %>% 
-                          rename(frame_mid = Time, 
+ref_tac_preddata <- ref_tac_fitdata %>%
+  mutate(ref_preds = map(ref_fit, ~.x$tacs %>%
+                          rename(frame_mid = Time,
                                  RefTAC = TAC,
-                                 RefTAC_fitted = TAC_fitted) %>% 
-                           mutate(frame_mid = frame_mid*60))) %>% 
-  select(-ref_fit) %>% 
-  mutate(ref_tacs = map2(ref_tacs, ref_preds, inner_join)) %>% 
-  mutate(ref_tacs = map(ref_tacs, ~.x %>% 
+                                 RefTAC_fitted = TAC_fitted) %>%
+                           mutate(frame_mid = frame_mid*60))) %>%
+  select(-ref_fit) %>%
+  mutate(ref_tacs = map2(ref_tacs, ref_preds, inner_join)) %>%
+  mutate(ref_tacs = map(ref_tacs, ~.x %>%
+                          select(-any_of("TAC")) %>%
                           rename(RefTAC_original = RefTAC,
-                                 RefTAC = RefTAC_fitted))) %>% 
-  select(-ref_preds) %>% 
+                                 RefTAC = RefTAC_fitted,
+                                 RefTAC_weights = ref_weights))) %>%
+  select(-ref_preds) %>%
   mutate(ref_tacs_json = map(1:n(), ~list(RefTAC = "Modelled reference TAC",
                                   RefTAC_original = "Original reference TAC",
-                                  ref_weights = "Weights used for reference TAC fitting")))
+                                  RefTAC_weights = "Weights used for reference TAC fitting")))
 
 ```
 
