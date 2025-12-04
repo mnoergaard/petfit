@@ -29,6 +29,7 @@ execute_datadef_step <- function(config_path, output_dir, petfit_dir,
   tryCatch({
     # Load configuration
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
 
     if (is.null(config$Subsetting)) {
       result$message <- "Subsetting configuration not found in config file"
@@ -224,6 +225,7 @@ execute_delay_step <- function(config_path, output_dir,
   tryCatch({
     # Load configuration
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
 
     # Check if delay method is "none"
     if (!is.null(config$FitDelay$model)) {
@@ -375,6 +377,7 @@ execute_model_step <- function(config_path, model_num, output_dir,
   tryCatch({
     # Load configuration
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
 
     # Get model configuration
     model_key <- paste0("Model", model_num)

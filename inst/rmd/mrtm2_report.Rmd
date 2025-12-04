@@ -43,6 +43,7 @@ config <- NULL
 if (file.exists(config_path)) {
   tryCatch({
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
   }, error = function(e) {
     cat("Warning: Could not load config file:", e$message, "\n")
   })

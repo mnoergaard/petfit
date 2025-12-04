@@ -2374,6 +2374,7 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
       tryCatch({
         config_json <- readLines(config_file_path, warn = FALSE)
         config_data <- jsonlite::fromJSON(paste(config_json, collapse = ""))
+        config_data <- coerce_bounds_numeric(config_data)
 
         # Validate configuration type
         config_type <- config_data$modelling_configuration_type
