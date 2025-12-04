@@ -13,7 +13,7 @@ params:
   blood_dir: NULL
 ---
 
-<!-- <!-- For temporary debugging, this defines temporary parameters for the parameterised report --> -->
+<!-- For temporary debugging, this defines temporary parameters for the parameterised report -->
 
 <!-- ```{r} -->
 <!-- analysis_folder <- "/home/granville/Repositories/OpenNeuro/Demo/ds004869/derivatives/petfit/Secondary_Analysis/" -->
@@ -36,7 +36,9 @@ theme_set(theme_light())
 analysis_folder <- params$analysis_folder %||% analysis_folder
 model_number <- params$model_number %||% model_number
 bids_dir <- params$bids_dir %||% bids_dir %||% NULL
+```
 
+```{r load-config, include=FALSE}
 # Load configuration from standard location
 config_path <- file.path(analysis_folder, "desc-petfitoptions_config.json")
 config <- NULL
@@ -232,8 +234,10 @@ Now we proceed to the actual MRTM1 model fitting using all available regional TA
 
 ```{r model-prep}
 # Extract t* parameters from configuration (optional)
-tstar <- model_config$tstar %||% NULL
-tstar_type <- model_config$tstar_type %||% "frames"
+tstar_type <- model_config$tstar_type %||% "none"
+
+# Set tstar to NULL if tstar_type is "none" (use all frames)
+tstar <- if (tstar_type == "none") NULL else model_config$tstar %||% NULL
 
 # Extract TAC subset parameters
 subset_config <- model_config$subset
@@ -262,6 +266,7 @@ model_data <- model_data %>%
                                     reftac = .x$RefTAC,
                                     roitac = .x$TAC,
                                     weights = .x$weights,
+                                    dur = .x$frame_dur,
                                     tstar = tstar,
                                     tstar_type = tstar_type,
                                     frameStartEnd = frameStartEnd,
@@ -498,7 +503,7 @@ savefits <- model_data %>%
   filter(success) %>%
   mutate(fitvals = map(fit_mrtm1, ~{
     .x$tacs %>%
-      mutate(Weights = .x$weights) %>%
+      full_join(.x$fitvals) %>% 
       select(
         frame_mid = Time,
         Reference,
