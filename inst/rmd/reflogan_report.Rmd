@@ -433,25 +433,25 @@ par_table %>%
   DT::datatable()
 ```
 
-<!-- ### Standard Error -->
+### Standard Error
 
-<!-- Here is shown the standard error as a fraction of the mean value (i.e. 1 = 100\%). -->
+Here is shown the standard error as a fraction of the mean value (i.e. 1 = 100\%).
 
-<!-- ```{r} -->
-<!-- par_se_table <- model_data %>% -->
-<!--   ungroup() %>% -->
-<!--   mutate(par.se = map(fit_refLogan, "par.se")) %>% -->
-<!--   select(-fit_refLogan, -tacs) %>% -->
-<!--   select(-output_stem) %>% -->
-<!--   select(where(~ n_distinct(.x) > 1)) %>% -->
-<!--   unnest(par.se) %>% -->
-<!--   select(where(~ mean(is.na(.x)) < 1)) %>% -->
-<!--   rename(BPnd.se = bp.se) -->
+```{r}
+par_se_table <- model_data %>%
+  ungroup() %>%
+  mutate(par.se = map(fit_refLogan, "par.se")) %>%
+  select(-fit_refLogan, -tacs) %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(par.se) %>%
+  select(where(~ mean(is.na(.x)) < 1)) %>%
+  rename(BPnd.se = bp.se)
 
-<!-- par_se_table %>% -->
-<!--   mutate(across(where(is.numeric), ~ round(.x, 3))) %>% -->
-<!--   DT::datatable() -->
-<!-- ``` -->
+par_se_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
 
 ### Goodness of Fit
 
