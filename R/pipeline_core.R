@@ -93,9 +93,23 @@ execute_datadef_step <- function(config_path, output_dir, petfit_dir,
       }
     }
 
-    # Cleanup previous TACs files before creating new ones
-    notify("Cleaning up previous TACs files...", "message")
-    cleanup_result <- cleanup_individual_tacs_files(output_dir)
+    # Get unique identifiers from filtered data for cleanup
+    keep_subjects <- unique(filtered_data$sub)
+    keep_sessions <- unique(filtered_data$ses[!is.na(filtered_data$ses)])
+    keep_pets <- unique(filtered_data$pet)
+
+    # Cleanup previous analysis files, removing folders/files not matching filter
+    cleanup_result <- cleanup_individual_tacs_files(
+      output_dir,
+      keep_subjects = keep_subjects,
+      keep_sessions = if (length(keep_sessions) > 0) keep_sessions else NULL,
+      keep_pets = keep_pets
+    )
+
+    # Only notify if something was actually cleaned up
+    if (cleanup_result$files_removed > 0 || cleanup_result$dirs_removed > 0) {
+      notify(cleanup_result$summary, "message")
+    }
 
     # Create individual TACs files
     file_result <- create_individual_tacs_files(filtered_data, output_dir)

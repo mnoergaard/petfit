@@ -129,13 +129,26 @@ subset_tacs_by_frames <- function(tacs_data, subset_type = NULL,
 
 #' Cleanup Individual TACs Files
 #'
-#' @description Remove all existing individual TACs files before regeneration
+#' @description Remove existing analysis files before regeneration. Handles
+#'   cleanup at multiple levels:
+#'   1. Subject folders - removes entire sub-* folders for filtered-out subjects
+#'   2. Session folders - removes ses-* folders for filtered-out sessions
+#'   3. Individual files - removes files whose pet identifier doesn't match filter
 #' @param output_dir Output directory containing individual files
 #' @param pattern File pattern to match (default: "*_desc-combinedregions_tacs.tsv")
+#' @param keep_subjects Character vector of subject IDs to keep (without "sub-" prefix).
+#'   If provided, entire folders for subjects NOT in this list will be removed.
+#' @param keep_sessions Character vector of session IDs to keep (without "ses-" prefix).
+#'   If provided, session folders NOT in this list will be removed from kept subjects.
+#' @param keep_pets Character vector of pet identifiers to keep. If provided,
+#'   files whose pet identifier doesn't match will be removed.
 #' @return List with counts of removed files and directories
 #' @export
 cleanup_individual_tacs_files <- function(output_dir,
-                                         pattern = "*_desc-combinedregions_tacs.tsv") {
+                                         pattern = "*_desc-combinedregions_tacs.tsv",
+                                         keep_subjects = NULL,
+                                         keep_sessions = NULL,
+                                         keep_pets = NULL) {
 
   files_removed <- 0
   dirs_removed <- 0
@@ -145,45 +158,92 @@ cleanup_individual_tacs_files <- function(output_dir,
                 summary = "Output directory does not exist"))
   }
 
-  # Find all existing TACs files
-  existing_files <- list.files(output_dir, pattern = pattern,
-                               recursive = TRUE, full.names = TRUE)
+  # 1. Remove entire folders for subjects NOT in the list
+  if (!is.null(keep_subjects)) {
+    all_dirs <- list.dirs(output_dir, recursive = FALSE, full.names = TRUE)
+    sub_dirs <- all_dirs[grepl("^sub-", basename(all_dirs))]
 
-  # Remove files
-  if (length(existing_files) > 0) {
-    file.remove(existing_files)
-    files_removed <- length(existing_files)
-    cat("Removed", files_removed, "existing TACs files\n")
+    keep_folders <- paste0("sub-", keep_subjects)
+    dirs_to_remove <- sub_dirs[!basename(sub_dirs) %in% keep_folders]
+
+    for (dir_path in dirs_to_remove) {
+      files_in_dir <- list.files(dir_path, recursive = TRUE)
+      files_removed <- files_removed + length(files_in_dir)
+
+      unlink(dir_path, recursive = TRUE)
+      dirs_removed <- dirs_removed + 1
+      cat("Removed subject folder:", basename(dir_path), "\n")
+    }
+  }
+
+  # 2. Remove session folders NOT in the list (within kept subjects)
+  if (!is.null(keep_sessions)) {
+    sub_dirs <- list.dirs(output_dir, recursive = FALSE, full.names = TRUE)
+    sub_dirs <- sub_dirs[grepl("^sub-", basename(sub_dirs))]
+
+    for (sub_dir in sub_dirs) {
+      ses_dirs <- list.dirs(sub_dir, recursive = FALSE, full.names = TRUE)
+      ses_dirs <- ses_dirs[grepl("^ses-", basename(ses_dirs))]
+
+      keep_ses_folders <- paste0("ses-", keep_sessions)
+      ses_to_remove <- ses_dirs[!basename(ses_dirs) %in% keep_ses_folders]
+
+      for (ses_path in ses_to_remove) {
+        files_in_dir <- list.files(ses_path, recursive = TRUE)
+        files_removed <- files_removed + length(files_in_dir)
+
+        unlink(ses_path, recursive = TRUE)
+        dirs_removed <- dirs_removed + 1
+        cat("Removed session folder:", file.path(basename(sub_dir), basename(ses_path)), "\n")
+      }
+    }
+  }
+
+  # 3. Remove files whose pet identifier doesn't match filtered data
+  if (!is.null(keep_pets)) {
+    all_files <- list.files(output_dir, recursive = TRUE, full.names = TRUE)
+    # Only consider files, not directories
+    all_files <- all_files[!dir.exists(all_files)]
+
+    for (filepath in all_files) {
+      filename <- basename(filepath)
+      # Extract pet identifier from filename (everything before _desc-)
+      pet_from_file <- stringr::str_extract(filename, "^.+(?=_desc-)")
+
+      if (!is.na(pet_from_file) && !pet_from_file %in% keep_pets) {
+        file.remove(filepath)
+        files_removed <- files_removed + 1
+        cat("Removed file for filtered pet:", filename, "\n")
+      }
+    }
   }
 
   # Clean up empty directories (recursively remove empty sub-*/ses-*/pet directories)
-  # Find all pet directories
   pet_dirs <- list.dirs(output_dir, recursive = TRUE, full.names = TRUE)
   pet_dirs <- pet_dirs[grepl("/pet$", pet_dirs)]
 
-  # Remove empty pet directories
   for (pet_dir in pet_dirs) {
-    if (length(list.files(pet_dir, all.files = FALSE)) == 0) {
+    if (dir.exists(pet_dir) && length(list.files(pet_dir, all.files = FALSE)) == 0) {
       unlink(pet_dir, recursive = TRUE)
       dirs_removed <- dirs_removed + 1
 
-      # Also remove parent session directory if empty
       parent_dir <- dirname(pet_dir)
       if (grepl("ses-", basename(parent_dir)) &&
+          dir.exists(parent_dir) &&
           length(list.files(parent_dir, all.files = FALSE)) == 0) {
         unlink(parent_dir, recursive = TRUE)
         dirs_removed <- dirs_removed + 1
 
-        # Also remove parent subject directory if empty
         grandparent_dir <- dirname(parent_dir)
         if (grepl("sub-", basename(grandparent_dir)) &&
+            dir.exists(grandparent_dir) &&
             length(list.files(grandparent_dir, all.files = FALSE)) == 0) {
           unlink(grandparent_dir, recursive = TRUE)
           dirs_removed <- dirs_removed + 1
         }
       }
-      # Remove parent subject directory if empty (for no-session case)
       else if (grepl("sub-", basename(parent_dir)) &&
+               dir.exists(parent_dir) &&
                length(list.files(parent_dir, all.files = FALSE)) == 0) {
         unlink(parent_dir, recursive = TRUE)
         dirs_removed <- dirs_removed + 1
@@ -192,10 +252,10 @@ cleanup_individual_tacs_files <- function(output_dir,
   }
 
   # Return summary
-  summary_msg <- if (files_removed > 0) {
-    paste("Removed", files_removed, "files and", dirs_removed, "empty directories")
+  summary_msg <- if (files_removed > 0 || dirs_removed > 0) {
+    paste("Removed", files_removed, "files and", dirs_removed, "directories")
   } else {
-    "No existing TACs files found"
+    "No existing analysis files found"
   }
 
   return(list(
