@@ -12,14 +12,6 @@ params:
   blood_dir: NULL
 ---
 
-<!-- For temporary debugging, this defines temporary parameters for the parameterised report -->
-
-<!-- ```{r} -->
-<!-- analysis_folder <- "/home/granville/Repositories/OpenNeuro/ds004869/derivatives/petfit/Primary_Analysis/" -->
-<!-- blood_dir <-"/home/granville/Repositories/OpenNeuro/ds004869/derivatives/bloodstream" -->
-<!-- model_number <- "Model 1" -->
-<!-- ``` -->
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(tidyverse)
@@ -44,6 +36,7 @@ config <- NULL
 if (file.exists(config_path)) {
   tryCatch({
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
     # cat("Loaded config from:", config_path, "\n")
   }, error = function(e) {
     cat("Warning: Could not load config file:", e$message, "\n")

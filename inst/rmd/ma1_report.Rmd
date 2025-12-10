@@ -1,8 +1,9 @@
 ---
 title: "Ichise Multilinear Analysis 1 (MA1) Model Fitting Report"
-output: 
+output:
   html_document:
     toc: true
+    toc_float: true
     toc_depth: 2
     code_folding: hide
 params:
@@ -11,15 +12,6 @@ params:
   bids_dir: NULL
   blood_dir: NULL
 ---
-
-<!-- For temporary debugging, this defines temporary parameters for the parameterised report -->
-
-<!-- # ```{r} -->
-<!-- # analysis_folder <- "/home/granville/Repositories/OpenNeuro/KaSP_UCBJ_BIDS_mini/derivatives/petfit/Primary_Analysis/" -->
-<!-- # blood_dir <-"/home/granville/Repositories/OpenNeuro/KaSP_UCBJ_BIDS_mini/derivatives/bloodstream" -->
-<!-- # model_number <- "Model 2" -->
-<!-- # ``` -->
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -44,6 +36,7 @@ config <- NULL
 if (file.exists(config_path)) {
   tryCatch({
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
     # cat("Loaded config from:", config_path, "\n")
   }, error = function(e) {
     cat("Warning: Could not load config file:", e$message, "\n")
@@ -63,7 +56,9 @@ oldfiles <- list.files(analysis_folder, pattern=desc,
 file.remove(oldfiles)
 ```
 
-This report summarises the MA1 results.
+This report summarises the model fitting step using Ichise Multilinear Analysis 1 (MA1) (Ichise et al., 2002).
+
+> Ichise M, Toyama H, Innis RB, Carson RE. Strategies to improve neuroreceptor parameter estimation by linear regression analysis. Journal of Cerebral Blood Flow & Metabolism. 2002 Oct 1;22(10):1271-81.
 
 # Analysis Configuration
 

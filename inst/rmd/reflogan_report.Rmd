@@ -1,0 +1,699 @@
+---
+title: "Non-Invasive Logan Graphical Analysis Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+params:
+  model_number: "Model 1"
+  analysis_folder: NULL
+  bids_dir: NULL
+  blood_dir: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(kinfitr)
+library(knitr)
+library(jsonlite)
+library(glue)
+library(DT)
+theme_set(theme_light())
+
+# Use parameters (from params or debugging section above)
+analysis_folder <- params$analysis_folder %||% analysis_folder
+model_number <- params$model_number %||% model_number
+bids_dir <- params$bids_dir %||% bids_dir %||% NULL
+```
+
+```{r load-config, include=FALSE}
+# Load configuration from standard location
+config_path <- file.path(analysis_folder, "desc-petfitoptions_config.json")
+config <- NULL
+if (file.exists(config_path)) {
+  tryCatch({
+    config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
+  }, error = function(e) {
+    cat("Warning: Could not load config file:", e$message, "\n")
+  })
+} else {
+  cat("Config file not found at:", config_path, "\n")
+}
+```
+
+```{r, include=FALSE}
+# Remove old files from previous runs
+desc <- str_remove(str_to_lower(model_number), " ")
+
+oldfiles <- list.files(analysis_folder, pattern=desc,
+                       recursive = T, full.names = T)
+
+file.remove(oldfiles)
+```
+
+
+
+This report summarises the model fitting step using Non-Invasive Logan Graphical Analysis (refLogan) (Logan et al., 1996).
+
+> Logan J, Fowler JS, Volkow ND, Wang GJ, Ding YS, Alexoff DL. Distribution volume ratios without blood sampling from graphical analysis of PET data. Journal of Cerebral Blood Flow & Metabolism. 1996 Sep 1;16(5):834-40.
+
+# Analysis Configuration
+
+**Model:** `r params$model_number` - refLogan (Reference Logan Graphical Analysis)
+
+**Analysis folder:** `r params$analysis_folder`
+
+**Generated on:** `r format(Sys.time(), "%Y-%m-%d %H:%M:%S")`
+
+# Model Configuration and Parameters
+
+```{r model-config}
+# Extract model configuration for this specific model
+model_config <- NULL
+if (!is.null(config$Models)) {
+  if (params$model_number == "Model 1") {
+    model_config <- config$Models$Model1
+  } else if (params$model_number == "Model 2") {
+    model_config <- config$Models$Model2
+  } else if (params$model_number == "Model 3") {
+    model_config <- config$Models$Model3
+  }
+}
+
+if (!is.null(model_config) && model_config$type == "refLogan") {
+  # Create configuration table
+  config_items <- list(
+    "Model Type" = "refLogan (Reference Logan Graphical Analysis)"
+  )
+
+  # Handle k2prime parameter configuration display
+  if (!is.null(model_config$k2prime_source)) {
+    # Inheritance system (Models 2 and 3)
+    k2prime_source <- model_config$k2prime_source
+
+    if (k2prime_source == "set") {
+      k2prime_source_display <- "Set to fixed value"
+    } else if (str_detect(k2prime_source, "inherit_model1")) {
+      inherit_method <- str_split(k2prime_source, "_")[[1]][3]
+      k2prime_source_display <- paste0("Inherited from Model 1 (", str_to_title(inherit_method), ")")
+    } else if (str_detect(k2prime_source, "inherit_model2")) {
+      inherit_method <- str_split(k2prime_source, "_")[[1]][3]
+      k2prime_source_display <- paste0("Inherited from Model 2 (", str_to_title(inherit_method), ")")
+    } else {
+      k2prime_source_display <- k2prime_source
+    }
+
+    config_items[["k2prime Parameter Source"]] <- k2prime_source_display
+  } else {
+    # Model 1 system - use k2prime value directly
+    k2prime_value <- model_config$k2prime %||% "Not set"
+    config_items[["k2prime Value"]] <- k2prime_value
+  }
+
+  # t* configuration (REQUIRED for refLogan - no "none" option)
+  tstar_type <- model_config$tstar_type %||% "frames"
+  config_items[["t* Value"]] <- model_config$tstar %||% "Default (10)"
+  config_items[["t* Type"]] <- if (tstar_type == "frame") {
+    "Number of Frames (from the end)"
+  } else {
+    "Time Point (minutes)"
+  }
+
+  # Add subset information if configured
+  if (!is.null(model_config$subset)) {
+    subset_info <- paste0(
+      "Type: ", model_config$subset$type %||% "time",
+      ", Start: ", model_config$subset$start %||% "Not set",
+      ", End: ", model_config$subset$end %||% "Not set"
+    )
+    config_items[["TAC Subset"]] <- subset_info
+  } else {
+    config_items[["TAC Subset"]] <- "Use all frames"
+  }
+
+  # Add model weights setting
+  config_items[["Use Model Weights"]] <- if(model_config$use_model_weights %||% FALSE) "Yes (transformed)" else "No"
+
+  config_df <- tibble(
+    Parameter = names(config_items),
+    Value = map_chr(config_items, as.character)
+  )
+
+  kable(config_df, caption = "refLogan Model Configuration")
+
+} else {
+  cat("refLogan model configuration not found or incomplete.")
+}
+```
+
+```{r setup-conditions, echo=FALSE}
+# Verify we have a valid refLogan configuration
+has_reflogan_config <- !is.null(model_config) && model_config$type == "refLogan"
+
+# Exit early if not a refLogan configuration
+if (!has_reflogan_config) {
+  cat("Invalid or missing refLogan configuration. This report should not have been generated.")
+  knitr::knit_exit()
+}
+
+# Check if we should use model weights (transformed)
+use_model_weights <- model_config$use_model_weights %||% FALSE
+```
+
+# Loading Data
+
+## Loading TAC Data
+
+```{r load-tacs}
+tacs_files <- list.files(analysis_folder,
+                        pattern = "*_desc-targetregions_tacs.tsv",
+                        recursive = TRUE)
+
+tac_data <- tibble(
+  filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-basename, -measurement, -desc)
+
+# Conditionally load and join weights data
+if (use_model_weights) {
+  weights_files <- list.files(analysis_folder,
+                          pattern = "*_weights.tsv",
+                          recursive = TRUE)
+
+  weightsdata <- tibble(
+    filename = weights_files) %>%
+    mutate(basename = basename(filename)) %>%
+    mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+    unnest(attributes) %>%
+    group_by(filename) %>%
+    mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+    ungroup() %>%
+    unnest(tacs) %>%
+    select(-filename, -basename, -measurement, -desc, -TAC)
+
+  tac_data <- tac_data %>%
+    inner_join(weightsdata)
+}
+```
+
+
+
+
+## Loading Reference TAC Data
+
+```{r load-reftac}
+ref_files <- list.files(analysis_folder,
+                        pattern = "*_desc-ref_tacs.tsv",
+                        recursive = TRUE)
+
+if (length(ref_files) == 0) {
+  stop("No reference TAC files found in analysis folder: ", analysis_folder)
+}
+
+ref_data <- tibble(
+  filename = ref_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(ref_tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(ref_tacs) %>%
+  select(-basename, -measurement, -desc, -filename) %>%
+  select(-volume_mm3)
+```
+
+
+```{r k2prime-loading-setup, echo=FALSE}
+# Determine inheritance for k2prime
+if(!is.null(model_config$k2prime_source) &&
+   str_detect(model_config$k2prime_source, "inherit")) {
+  k2prime_inheritance <- TRUE
+} else {
+  k2prime_inheritance <- FALSE
+}
+```
+
+
+```{r heading-k2prime, echo=k2prime_inheritance, eval=k2prime_inheritance, results='asis'}
+str_glue("## Loading k2prime Information
+
+         The model has been defined to inherit a k2prime value from a previous model run.
+         ")
+```
+
+
+```{r load-k2prime, echo=k2prime_inheritance, eval=k2prime_inheritance}
+k2prime_inheritance_model <- str_match(model_config$k2prime_source, "inherit_(model\\d)")[,2]
+k2prime_inheritance_type <- str_match(model_config$k2prime_source, "inherit_model\\d_(\\w*)")[,2]
+
+k2prime_data <- tibble(
+  filename = list.files(analysis_folder,
+                        pattern = paste0("*_desc-", k2prime_inheritance_model,"_kinpar.tsv"),
+                       recursive = TRUE, full.names = TRUE)
+)
+
+if( nrow(k2prime_data)==0 ) {
+  cat("No k2prime data found for inheritance.")
+  cat("k2prime will be set to 0.1")
+
+  k2prime_data <- tac_data %>%
+    select(any_of(c("sub", "ses", "trc", "rec", "task", "run", "pet"))) %>%
+    distinct() %>%
+    mutate(k2prime = 0.1)
+
+} else{
+
+  k2prime_data <- k2prime_data %>%
+    mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+    unnest(attributes) %>%
+    filter(!is.na(sub)) %>%
+    mutate(pet = str_remove(basename(filename), "_model.*.*")) %>%
+    mutate(pet = str_remove(basename(pet), "_desc.*")) %>%
+    mutate(pet = str_remove(pet, "_kinpar.*")) %>%
+    mutate(k2prime_kp = map(filename, read_tsv)) %>%
+    select(-filename, -measurement, -desc) %>%
+    group_by(pet)
+
+  # Calculation
+  if(k2prime_inheritance_type == "mean") {
+    k2prime_data <- k2prime_data %>%
+      mutate(k2prime=map_dbl(k2prime_kp, ~mean(.x$k2prime, na.rm = TRUE))) %>%
+    select(-k2prime_kp) %>%
+    ungroup()
+  }
+
+  if(k2prime_inheritance_type == "median") {
+  k2prime_data <- k2prime_data %>%
+    mutate(k2prime=map_dbl(k2prime_kp, ~median(.x$k2prime, na.rm = TRUE))) %>%
+    select(-k2prime_kp) %>%
+    ungroup()
+  }
+
+  if(k2prime_inheritance_type == "regional") {
+  k2prime_data <- k2prime_data %>%
+    mutate(k2prime_kp = map(k2prime_kp, ~.x %>%
+                         select(region, k2prime))) %>%
+    unnest(k2prime_kp) %>%
+    ungroup()
+  }
+}
+```
+
+
+# Combining Data
+
+```{r}
+model_data <- tac_data %>%
+  inner_join(ref_data) %>%
+  group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet", "filename", "region")))) %>%
+  mutate(frame_start = frame_start/60,
+         frame_end = frame_end/60,
+         frame_dur = frame_dur/60,
+         frame_mid = frame_mid/60) %>%
+  nest(.key="tacs") %>%
+  ungroup() %>%
+  mutate(output_stem = filename) %>%
+  select(-filename) %>%
+  mutate(output_stem = str_remove(output_stem, "_desc.*")) %>%
+  mutate(output_stem = str_remove(output_stem, "_weights.*")) %>%
+  mutate(output_stem = str_remove(output_stem, "_tacs.*"))
+```
+
+```{r combine-k2prime, echo=k2prime_inheritance, eval=k2prime_inheritance}
+model_data <- model_data %>%
+  left_join(k2prime_data)
+```
+
+
+# refLogan Model Fitting
+
+Now we proceed to the actual refLogan (Reference Logan) graphical analysis model fitting using all available regional TACs.
+
+```{r model-prep}
+# Extract t* parameters from configuration (REQUIRED for refLogan)
+tstar_type <- model_config$tstar_type %||% "frames"
+
+# Validate tstar_type - refLogan only accepts "frames" or "time", default to "frames"
+if (!tstar_type %in% c("frames", "frame", "time")) {
+  tstar_type <- "frames"
+}
+
+# refLogan REQUIRES tstar - default to 10 if not specified
+tstar <- model_config$tstar %||% 10
+
+# Set k2prime if not being inherited
+k2prime_source <- model_config$k2prime_source %||% "set"
+if(k2prime_source == "set") {
+  model_data$k2prime <- model_config$k2prime %||% 0.1
+}
+
+# Extract TAC subset parameters
+subset_config <- model_config$subset
+frameStartEnd <- NULL
+timeStartEnd <- NULL
+
+if (!is.null(subset_config) && (!is.null(subset_config$start) || !is.null(subset_config$end))) {
+  if (subset_config$type == "frame") {
+    frameStartEnd <- c(subset_config$start, subset_config$end)
+  } else if (subset_config$type == "time") {
+    timeStartEnd <- c(subset_config$start, subset_config$end)
+  }
+}
+```
+
+
+```{r model-fitting, warning=TRUE}
+# Safe refLogan function to handle errors
+safe_refLogan <- possibly(refLogan, otherwise = NA)
+
+# Fit refLogan model to all regional TACs
+model_data <- model_data %>%
+  group_by(output_stem, region) %>%
+  mutate(fit_refLogan = pmap(list(tacs, k2prime),
+                         ~safe_refLogan(t_tac = ..1$frame_mid,
+                                    reftac = ..1$RefTAC,
+                                    roitac = ..1$TAC,
+                                    k2prime = ..2,
+                                    weights = if(use_model_weights) ..1$weights else NULL,
+                                    dur = ..1$frame_dur,
+                                    tstar = tstar,
+                                    tstar_type = tstar_type,
+                                    frameStartEnd = frameStartEnd,
+                                    timeStartEnd = timeStartEnd))) %>%
+  ungroup() %>%
+  mutate(success = map_dbl(fit_refLogan, length) > 1)
+```
+
+```{r, results='asis'}
+success_n <- sum(model_data$success)
+tot_n <- nrow(model_data)
+
+str_glue("Model successfully estimated for {success_n} / {tot_n} ({round(100*success_n/tot_n)}%) of measurements.
+
+         Model estimation unsuccessful for {tot_n-success_n} / {tot_n}  ({100-(round(100*success_n/tot_n))}%) of measurements.")
+```
+
+# Results
+
+```{r}
+model_data <- model_data %>%
+  filter(success)
+```
+
+
+## Parameters
+
+```{r}
+model_res <- model_data %>%
+  ungroup() %>%
+  mutate(par = map(fit_refLogan, "par")) %>%
+  select(-fit_refLogan, -tacs)
+```
+
+### Estimates
+
+```{r}
+par_table <- model_res %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(par) %>%
+  rename(BPnd = bp)
+
+par_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+### Standard Error
+
+Here is shown the standard error as a fraction of the mean value (i.e. 1 = 100\%).
+
+```{r}
+par_se_table <- model_data %>%
+  ungroup() %>%
+  mutate(par.se = map(fit_refLogan, "par.se")) %>%
+  select(-fit_refLogan, -tacs) %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(par.se) %>%
+  select(where(~ mean(is.na(.x)) < 1)) %>%
+  rename(BPnd.se = bp.se)
+
+par_se_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+### Goodness of Fit
+
+```{r}
+RSS <- function(fit) {
+  deviance(fit)
+}
+
+reduced_chisq <- function(fit) {
+  deviance(fit) / df.residual(fit)
+}
+
+gof_table <- model_data %>%
+  ungroup() %>%
+  mutate(gof = map(fit_refLogan, ~tibble(
+    AIC = AIC(.x$fit),
+    BIC = BIC(.x$fit),
+    RSS = RSS(.x$fit),
+    reduced_chisq = reduced_chisq(.x$fit)))) %>%
+  select(-fit_refLogan, -tacs) %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(gof) %>%
+  select(where(~ mean(is.na(.x)) < 1))
+
+gof_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+
+**Note:** The Reduced Chi-Squared figure is a goodness-of-fit metric calculated as the weighted residual sum of squares divided by degrees of freedom. Values near 1.0 indicate appropriate model fit and error estimation, while values >>1 suggest underfitting, and values <<1 suggest overfitting.
+
+### Parameter Plots
+
+#### Overall Histogram
+
+```{r, fig.width=6, fig.height=5}
+# refLogan only outputs BPnd (binding potential)
+par_table_long <- par_table %>%
+  pivot_longer(cols=c(BPnd),
+               names_to = "Parameter",
+               values_to = "Value")
+
+
+ggplot(par_table_long, aes(x=Value, fill=Parameter)) +
+  geom_histogram(colour="black") +
+  guides(fill="none") +
+  labs(x = expression(BP[ND]))
+```
+
+
+#### Histograms By Region
+
+```{r, fig.width=6, fig.height=5}
+ggplot(par_table_long, aes(x=Value, fill=region)) +
+  geom_histogram(colour="black") +
+  labs(x = expression(BP[ND]))
+```
+
+
+## Fits
+
+### Plots
+
+The refLogan model uses a graphical analysis approach. The plots below show the Logan plot space with transformed coordinates, where the slope represents the distribution volume ratio (DVR = BP + 1).
+
+```{r, fig.height=4, fig.width=6}
+fitplots <- model_data %>%
+  mutate(title = paste(pet, " : ", region)) %>%
+  mutate(fitplot = pmap(list(fit_refLogan, region, title),
+                        ~plot(..1, roiname=..2) +
+                          labs(title = ..3))) %>%
+  pull(fitplot)
+
+walk(fitplots, ~print(.x))
+```
+
+### Residuals
+
+```{r, fig.height=4, fig.width=6}
+resplots <- model_data %>%
+  mutate(title = paste(pet, " : ", region)) %>%
+  mutate(resplot = pmap(list(fit_refLogan, title),
+                        ~plot_residuals(..1) +
+                          labs(title = ..2))) %>%
+  pull(resplot)
+
+walk(resplots, ~print(.x))
+```
+
+
+
+
+# Saving Parameters
+
+## Main TSV
+
+```{r}
+savepar <- inner_join(par_table,
+                      par_se_table) %>%
+  inner_join(gof_table) %>%
+  # Fixing parameter names
+  rename_with(~str_replace(.x, "\\.se", "-se"))
+
+write_tsv(savepar,
+          file=paste0(analysis_folder, "/",
+                      "model_", "refLogan","_",
+                      "desc-", desc,"_",
+                      "kinpar.tsv"))
+```
+
+## PET Folder TSVs
+
+```{r}
+folder_data <- tibble(
+  filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  mutate(dirname = dirname(filename)) %>%
+  select(-filename, -basename, -measurement, -desc)
+
+savepar_pet <- savepar %>%
+    group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet")))) %>%
+  nest(.key="kinpars") %>%
+  inner_join(folder_data) %>%
+  mutate(filename = paste0(analysis_folder, "/", dirname, "/", pet, "_",
+                           "model_", "refLogan","_",
+                            "desc-", desc,"_",
+                            "kinpar.tsv"))
+
+walk2(savepar_pet$kinpars, savepar_pet$filename, ~write_tsv(.x, .y))
+```
+
+```{r}
+# Determine t* description for JSON metadata (always set for refLogan)
+tstar_desc <- paste0("t* = ", tstar, " (", tstar_type, ")")
+
+# Determine k2prime source for JSON metadata
+k2prime_source_desc <- if (!is.null(model_config$k2prime_source) &&
+                           str_detect(model_config$k2prime_source, "inherit")) {
+  config_items[["k2prime Parameter Source"]]
+} else {
+  paste0("Set to fixed value: ", model_config$k2prime %||% 0.1)
+}
+
+savepar_pet <- savepar_pet %>%
+  group_by(pet) %>%
+  mutate(jsondat = map(kinpars, ~list(
+      Description = "Reference Logan Graphical Analysis using linear regression.",
+      ModelName = "refLogan",
+      AdditionalModelDetails = str_glue("Reference tissue model - no blood data required. {tstar_desc}. k2prime source: {k2prime_source_desc}")))) %>%
+  mutate(jsondat = jsonlite::toJSON(jsondat, pretty = TRUE, auto_unbox = TRUE)) %>%
+  mutate(filename_json = str_replace(filename, ".tsv", ".json"))
+
+walk2(savepar_pet$jsondat,
+      savepar_pet$filename_json,
+      ~writeLines(.x, .y))
+```
+
+# Saving Fitted Values
+
+## PET Folder TSVs
+
+The fitted values for the refLogan model include the Logan plot coordinates (transformed space) as well as the original TAC data.
+
+```{r}
+savefits <- model_data %>%
+  filter(success) %>%
+  mutate(fitvals = map(fit_refLogan, ~{
+    # Get number of frames and t* info
+    n_frames <- nrow(.x$tacs)
+    tstar_included <- .x$tstarIncludedFrames
+
+    # Calculate fitted line values for Logan plot
+    fitted_values <- as.numeric(.x$fit$coefficients[1]) +
+                     .x$fitvals$Logan_Ref * as.numeric(.x$fit$coefficients[2])
+
+    # Mark which frames are included in fit (after t*)
+    in_fit <- c(rep(FALSE, n_frames - tstar_included),
+                rep(TRUE, tstar_included))
+
+    tibble(
+      frame_mid = .x$tacs$Time,
+      Reference = .x$tacs$Reference,
+      TAC = .x$tacs$Target,
+      refLogan_x = .x$fitvals$Logan_Ref,
+      refLogan_y = .x$fitvals$Logan_ROI,
+      refLogan_fitted = ifelse(in_fit, fitted_values, NA),
+      weights = .x$weights
+    )
+  })) %>%
+  select(any_of(c("sub", "ses", "task", "trc", "run",
+                  "rec", "pet", "region")), fitvals) %>%
+  unnest(cols=c("fitvals")) %>%
+  group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet")))) %>%
+  nest(.key="fitvals")
+
+savefits_pet <- savefits %>%
+  inner_join(folder_data) %>%
+  mutate(filename = paste0(analysis_folder, "/", dirname, "/", pet, "_",
+                           "model_", "refLogan","_",
+                            "desc-", desc,"fitted",
+                            "_",
+                            "tacs.tsv"))
+
+walk2(savefits_pet$fitvals, savefits_pet$filename, ~write_tsv(.x, .y))
+```
+
+```{r}
+savefits_pet <- savefits_pet %>%
+  group_by(pet) %>%
+  mutate(jsondat = map(fitvals, ~list(
+      Description = "Reference Logan Graphical Analysis fitted values.",
+      ModelName = "refLogan",
+      AdditionalModelDetails = str_glue("{tstar_desc}. k2prime source: {k2prime_source_desc}"),
+      frame_mid = "The frame middle time in minutes",
+      Reference = "Reference tissue radioactivity in kBq",
+      TAC = "Target tissue radioactivity data in kBq",
+      refLogan_x = "Transformed x-axis values: (integral(Cref) + Cref/k2prime) / Ctarget",
+      refLogan_y = "Transformed y-axis values: integral(Ctarget) / Ctarget",
+      refLogan_fitted = "Fitted values from linear regression in Logan space (NA for frames before t*)",
+      weights = "Model weights"))) %>%
+  mutate(jsondat = jsonlite::toJSON(jsondat, pretty = TRUE, auto_unbox = TRUE)) %>%
+  mutate(filename_json = str_replace(filename, ".tsv", ".json"))
+
+walk2(savefits_pet$jsondat,
+      savefits_pet$filename_json,
+      ~writeLines(.x, .y))
+```
+
+
+
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```

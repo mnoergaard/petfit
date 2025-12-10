@@ -1,0 +1,556 @@
+---
+title: "SRTM Model Fitting Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+params:
+  model_number: "Model 1"
+  analysis_folder: NULL
+  bids_dir: NULL
+  blood_dir: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(kinfitr)
+library(knitr)
+library(jsonlite)
+library(glue)
+library(DT)
+theme_set(theme_light())
+
+# Use parameters (from params or debugging section above)
+analysis_folder <- params$analysis_folder %||% analysis_folder
+model_number <- params$model_number %||% model_number
+bids_dir <- params$bids_dir %||% bids_dir %||% NULL
+
+# Load configuration from standard location
+config_path <- file.path(analysis_folder, "desc-petfitoptions_config.json")
+config <- NULL
+if (file.exists(config_path)) {
+  tryCatch({
+    config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
+  }, error = function(e) {
+    cat("Warning: Could not load config file:", e$message, "\n")
+  })
+} else {
+  cat("Config file not found at:", config_path, "\n")
+}
+```
+
+```{r, include=FALSE}
+# Remove old files from previous runs
+desc <- str_remove(str_to_lower(model_number), " ")
+
+oldfiles <- list.files(analysis_folder, pattern=desc,
+                       recursive = T, full.names = T)
+
+file.remove(oldfiles)
+```
+
+
+
+This report summarises the model fitting step using the Simplified Reference Tissue Model (SRTM) (Lammertsma & Hume, 1996).
+
+> Lammertsma AA, Hume SP. Simplified reference tissue model for PET receptor studies. Neuroimage. 1996 Dec 31;4(3):153-8.
+
+# Analysis Configuration
+
+**Model:** `r params$model_number` - SRTM (Simplified Reference Tissue Model)
+
+**Analysis folder:** `r params$analysis_folder`
+
+**Generated on:** `r format(Sys.time(), "%Y-%m-%d %H:%M:%S")`
+
+# Model Configuration and Parameters
+
+```{r model-config}
+# Extract model configuration for this specific model
+model_config <- NULL
+if (!is.null(config$Models)) {
+  if (params$model_number == "Model 1") {
+    model_config <- config$Models$Model1
+  } else if (params$model_number == "Model 2") {
+    model_config <- config$Models$Model2
+  } else if (params$model_number == "Model 3") {
+    model_config <- config$Models$Model3
+  }
+}
+
+if (!is.null(model_config) && model_config$type == "SRTM") {
+  # Create configuration table
+  config_items <- list(
+    "Model Type" = "SRTM (Simplified Reference Tissue Model)",
+    "R1 Start Value" = model_config$R1$start %||% "Default",
+    "R1 Lower Bound" = model_config$R1$lower %||% "Default",
+    "R1 Upper Bound" = model_config$R1$upper %||% "Default",
+    "k2 Start Value" = model_config$k2$start %||% "Default",
+    "k2 Lower Bound" = model_config$k2$lower %||% "Default",
+    "k2 Upper Bound" = model_config$k2$upper %||% "Default",
+    "BPnd Start Value" = model_config$BPnd$start %||% "Default",
+    "BPnd Lower Bound" = model_config$BPnd$lower %||% "Default",
+    "BPnd Upper Bound" = model_config$BPnd$upper %||% "Default",
+    "Multstart Iterations" = model_config$multstart_iter %||% 1
+  )
+
+  # Add subset information if configured
+  if (!is.null(model_config$subset)) {
+    subset_info <- paste0(
+      "Type: ", model_config$subset$type %||% "time",
+      ", Start: ", model_config$subset$start %||% "Not set",
+      ", End: ", model_config$subset$end %||% "Not set"
+    )
+    config_items[["TAC Subset"]] <- subset_info
+  } else {
+    config_items[["TAC Subset"]] <- "Use all frames"
+  }
+
+  config_df <- tibble(
+    Parameter = names(config_items),
+    Value = map_chr(config_items, as.character)
+  )
+
+  kable(config_df, caption = "SRTM Model Configuration")
+
+} else {
+  cat("SRTM model configuration not found or incomplete.")
+}
+```
+
+```{r setup-conditions, echo=FALSE}
+# Verify we have a valid SRTM configuration
+has_srtm_config <- !is.null(model_config) && model_config$type == "SRTM"
+
+# Exit early if not a SRTM configuration
+if (!has_srtm_config) {
+  cat("Invalid or missing SRTM configuration. This report should not have been generated.")
+  knitr::knit_exit()
+}
+```
+
+# Loading Data
+
+## Loading TAC Data
+
+```{r load-tacs}
+weights_files <- list.files(analysis_folder,
+                        pattern = "*_weights.tsv",
+                        recursive = TRUE)
+
+weightsdata <- tibble(
+  filename = weights_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-filename, -basename, -measurement, -desc, -TAC)
+
+
+tacs_files <- list.files(analysis_folder,
+                        pattern = "*_desc-targetregions_tacs.tsv",
+                        recursive = TRUE)
+
+tac_data <- tibble(
+  filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-basename, -measurement, -desc) %>%
+  inner_join(weightsdata)
+```
+
+
+
+
+## Loading Reference TAC Data
+
+```{r load-reftac}
+ref_files <- list.files(analysis_folder,
+                        pattern = "*_desc-ref_tacs.tsv",
+                        recursive = TRUE)
+
+if (length(ref_files) == 0) {
+  stop("No reference TAC files found in analysis folder: ", analysis_folder)
+}
+
+ref_data <- tibble(
+  filename = ref_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(ref_tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(ref_tacs) %>%
+  select(-basename, -measurement, -desc, -filename) %>% 
+  select(-volume_mm3)
+```
+
+
+# Combining Data
+
+```{r}
+model_data <- tac_data %>%
+  inner_join(ref_data) %>%
+  group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet", "filename", "region")))) %>%
+  mutate(frame_start = frame_start/60,
+         frame_end = frame_end/60,
+         frame_dur = frame_dur/60,
+         frame_mid = frame_mid/60) %>% 
+  nest(.key="tacs") %>%
+  ungroup() %>%
+  mutate(output_stem = filename) %>%
+  select(-filename) %>%
+  mutate(output_stem = str_remove(output_stem, "_desc.*")) %>%
+  mutate(output_stem = str_remove(output_stem, "_weights.*")) %>%
+  mutate(output_stem = str_remove(output_stem, "_tacs.*"))
+```
+
+
+# SRTM Model Fitting
+
+Now we proceed to the actual SRTM model fitting using all available regional TACs.
+
+```{r model-prep}
+# Extract model parameters from configuration
+R1_start <- model_config$R1$start %||% 1
+R1_lower <- model_config$R1$lower %||% 0
+R1_upper <- model_config$R1$upper %||% 10
+
+k2_start <- model_config$k2$start %||% 0.1
+k2_lower <- model_config$k2$lower %||% 0
+k2_upper <- model_config$k2$upper %||% 1
+
+bp_start <- model_config$BPnd$start %||% 1.5
+bp_lower <- model_config$BPnd$lower %||% 0
+bp_upper <- model_config$BPnd$upper %||% 15
+
+multstart_iter <- model_config$multstart_iter %||% 1
+
+# Extract TAC subset parameters
+subset_config <- model_config$subset
+frameStartEnd <- NULL
+timeStartEnd <- NULL
+
+if (!is.null(subset_config) && (!is.null(subset_config$start) || !is.null(subset_config$end))) {
+  if (subset_config$type == "frame") {
+    frameStartEnd <- c(subset_config$start, subset_config$end)
+  } else if (subset_config$type == "time") {
+    timeStartEnd <- c(subset_config$start, subset_config$end)
+  }
+}
+```
+
+
+```{r model-fitting, warning=TRUE}
+# Safe SRTM function to handle errors
+safe_srtm <- possibly(srtm, otherwise = NA)
+
+# Fit SRTM model to all regional TACs
+model_data <- model_data %>%
+  group_by(output_stem, region) %>%
+  mutate(fit_srtm = map(tacs,
+                         ~safe_srtm(t_tac = .x$frame_mid,
+                                    reftac = .x$RefTAC,
+                                    roitac = .x$TAC,
+                                    weights = .x$weights,
+                                    frameStartEnd = frameStartEnd,
+                                    timeStartEnd = timeStartEnd,
+                                    R1.start = R1_start,
+                                    R1.lower = R1_lower,
+                                    R1.upper = R1_upper,
+                                    k2.start = k2_start,
+                                    k2.lower = k2_lower,
+                                    k2.upper = k2_upper,
+                                    bp.start = bp_start,
+                                    bp.lower = bp_lower,
+                                    bp.upper = bp_upper,
+                                    multstart_iter = multstart_iter))) %>%
+  ungroup() %>%
+  mutate(success = map_dbl(fit_srtm, length) > 1)
+```
+
+```{r, results='asis'}
+success_n <- sum(model_data$success)
+tot_n <- nrow(model_data)
+
+str_glue("Model successfully estimated for {success_n} / {tot_n} ({round(100*success_n/tot_n)}%) of measurements.
+
+         Model estimation unsuccessful for {tot_n-success_n} / {tot_n}  ({100-(round(100*success_n/tot_n))}%) of measurements.")
+```
+
+# Results
+
+```{r}
+model_data <- model_data %>%
+  filter(success)
+```
+
+
+## Parameters
+
+```{r}
+model_res <- model_data %>%
+  ungroup() %>%
+  mutate(par = map(fit_srtm, "par")) %>%
+  select(-fit_srtm, -tacs)
+```
+
+### Estimates
+
+```{r}
+par_table <- model_res %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(par) %>% 
+  rename(BPnd = bp)
+
+par_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+### Standard Error
+
+Here is shown the standard error as a fraction of the mean value (i.e. 1 = 100\%).
+
+```{r}
+par_se_table <- model_data %>%
+  ungroup() %>%
+  mutate(par.se = map(fit_srtm, "par.se")) %>%
+  select(-fit_srtm, -tacs) %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(par.se) %>%
+  select(where(~ mean(is.na(.x)) < 1)) %>% 
+  rename(BPnd.se = bp.se)
+
+par_se_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+### Goodness of Fit
+
+```{r}
+RSS <- function(fit) {
+  deviance(fit)
+}
+
+reduced_chisq <- function(fit) {
+  deviance(fit) / df.residual(fit)
+}
+
+gof_table <- model_data %>%
+  ungroup() %>%
+  mutate(gof = map(fit_srtm, ~tibble(
+    AIC = AIC(.x$fit),
+    BIC = BIC(.x$fit),
+    RSS = RSS(.x$fit),
+    reduced_chisq = reduced_chisq(.x$fit)))) %>%
+  select(-fit_srtm, -tacs) %>%
+  select(-output_stem) %>%
+  select(where(~ n_distinct(.x) > 1)) %>%
+  unnest(gof) %>%
+  select(where(~ mean(is.na(.x)) < 1))
+
+gof_table %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  DT::datatable()
+```
+
+
+**Note:** The Reduced Chi-Squared figure is a goodness-of-fit metric calculated as the weighted residual sum of squares divided by degrees of freedom. Values near 1.0 indicate appropriate model fit and error estimation, while values >>1 suggest underfitting, and values <<1 suggest overfitting.
+
+### Parameter Plots
+
+#### Overall Histogram
+
+```{r, fig.width=7, fig.height=7}
+par_table_long <- par_table %>%
+  pivot_longer(cols=c(R1, k2, BPnd, k2prime),
+               names_to = "Parameter",
+               values_to = "Value")
+
+
+ggplot(par_table_long, aes(x=Value, fill=Parameter)) +
+  geom_histogram(colour="black") +
+  facet_wrap(~Parameter, scales="free", ncol=2) +
+  guides(fill="none")
+```
+
+
+#### Histograms By Region
+
+```{r, fig.width=7, fig.height=7}
+ggplot(par_table_long, aes(x=Value, fill=region)) +
+  geom_histogram(colour="black") +
+  facet_wrap(~Parameter, scales="free", ncol=2)
+```
+
+
+## Fits
+
+### Plots
+
+```{r, fig.height=4, fig.width=6}
+fitplots <- model_data %>%
+  mutate(title = paste(pet, " : ", region)) %>%
+  mutate(fitplot = pmap(list(fit_srtm, region, title),
+                        ~plot(..1, roiname=..2) +
+                          labs(title = ..3,
+                               y = "Radioactivity (kBq)",
+                               x = "Time (min)"))) %>%
+  pull(fitplot)
+
+walk(fitplots, ~print(.x))
+```
+
+### Residuals
+
+```{r, fig.height=4, fig.width=6}
+resplots <- model_data %>%
+  mutate(title = paste(pet, " : ", region)) %>%
+  mutate(resplot = pmap(list(fit_srtm, title),
+                        ~plot_residuals(..1) +
+                          labs(title = ..2))) %>%
+  pull(resplot)
+
+walk(resplots, ~print(.x))
+```
+
+
+
+
+# Saving Parameters
+
+## Main TSV
+
+```{r}
+savepar <- inner_join(par_table,
+                      par_se_table) %>%
+  inner_join(gof_table) %>%
+  # Fixing parameter names
+  rename_with(~str_replace(.x, "\\.se", "-se"))
+
+write_tsv(savepar,
+          file=paste0(analysis_folder, "/",
+                      "model_", "SRTM","_",
+                      "desc-", desc,"_",
+                      "kinpar.tsv"))
+```
+
+## PET Folder TSVs
+
+```{r}
+folder_data <- tibble(
+  filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  mutate(dirname = dirname(filename)) %>%
+  select(-filename, -basename, -measurement, -desc)
+
+savepar_pet <- savepar %>%
+    group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet")))) %>%
+  nest(.key="kinpars") %>%
+  inner_join(folder_data) %>%
+  mutate(filename = paste0(analysis_folder, "/", dirname, "/", pet, "_",
+                           "model_", "SRTM","_",
+                            "desc-", desc,"_",
+                            "kinpar.tsv"))
+
+walk2(savepar_pet$kinpars, savepar_pet$filename, ~write_tsv(.x, .y))
+```
+
+```{r}
+savepar_pet <- savepar_pet %>%
+  group_by(pet) %>%
+  mutate(jsondat = map(kinpars, ~list(
+      Description = "Simplified Reference Tissue Model fit using nonlinear least squares estimation.",
+      ModelName = "SRTM",
+      AdditionalModelDetails = "Reference tissue model - no blood data required"))) %>%
+  mutate(jsondat = jsonlite::toJSON(jsondat, pretty = TRUE, auto_unbox = TRUE)) %>%
+  mutate(filename_json = str_replace(filename, ".tsv", ".json"))
+
+walk2(savepar_pet$jsondat,
+      savepar_pet$filename_json,
+      ~writeLines(.x, .y))
+```
+
+# Saving Fitted Values
+
+## PET Folder TSVs
+
+```{r}
+savefits <- model_data %>%
+  filter(success) %>%
+  mutate(fitvals = map(fit_srtm, ~{
+    .x$tacs %>%
+      mutate(Weights = .x$weights) %>%
+      select(
+        frame_mid = Time,
+        Reference,
+        TAC = Target,
+        TAC_fitted = Target_fitted,
+        weights = Weights
+      )
+  })) %>%
+  select(any_of(c("sub", "ses", "task", "trc", "run", 
+                  "rec", "pet", "region")), fitvals) %>%
+  unnest(cols=c("fitvals")) %>%
+  group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task",
+                                           "run", "pet")))) %>%
+  nest(.key="fitvals")
+
+savefits_pet <- savefits %>%
+  inner_join(folder_data) %>%
+  mutate(filename = paste0(analysis_folder, "/", dirname, "/", pet, "_",
+                           "model_", "SRTM","_",
+                            "desc-", desc,"fitted",
+                            "_",
+                            "tacs.tsv"))
+
+walk2(savefits_pet$fitvals, savefits_pet$filename, ~write_tsv(.x, .y))
+```
+
+```{r}
+savefits_pet <- savefits_pet %>%
+  group_by(pet) %>%
+  mutate(jsondat = map(fitvals, ~list(
+      Description = "Simplified Reference Tissue Model fitted values.",
+      ModelName = "SRTM",
+      frame_mid = "The frame middle time in minutes",
+      TAC = "TAC radioactivity data in kBq to which the model was fitted.",
+      TAC_fitted = "Model fitted values.",
+      weights = "Model weights"))) %>%
+  mutate(jsondat = jsonlite::toJSON(jsondat, pretty = TRUE, auto_unbox = TRUE)) %>%
+  mutate(filename_json = str_replace(filename, ".tsv", ".json"))
+
+walk2(savefits_pet$jsondat,
+      savefits_pet$filename_json,
+      ~writeLines(.x, .y))
+```
+
+
+
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```

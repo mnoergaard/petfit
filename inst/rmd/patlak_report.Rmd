@@ -3,6 +3,7 @@ title: "Patlak Plot Model Fitting Report"
 output:
   html_document:
     toc: true
+    toc_float: true
     toc_depth: 2
     code_folding: hide
 params:
@@ -11,15 +12,6 @@ params:
   bids_dir: NULL
   blood_dir: NULL
 ---
-
-<!-- For temporary debugging, this defines temporary parameters for the parameterised report -->
-
-<!-- # ```{r} -->
-<!-- # analysis_folder <- "/home/granville/Repositories/OpenNeuro/KaSP_UCBJ_BIDS_mini/derivatives/petfit/Primary_Analysis/" -->
-<!-- # blood_dir <-"/home/granville/Repositories/OpenNeuro/KaSP_UCBJ_BIDS_mini/derivatives/bloodstream" -->
-<!-- # model_number <- "Model 3" -->
-<!-- # ``` -->
-
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -44,6 +36,7 @@ config <- NULL
 if (file.exists(config_path)) {
   tryCatch({
     config <- jsonlite::fromJSON(config_path)
+    config <- coerce_bounds_numeric(config)
     # cat("Loaded config from:", config_path, "\n")
   }, error = function(e) {
     cat("Warning: Could not load config file:", e$message, "\n")
@@ -63,7 +56,9 @@ oldfiles <- list.files(analysis_folder, pattern=desc,
 file.remove(oldfiles)
 ```
 
-This report summarises the Patlak graphical analysis results.
+This report summarises the model fitting step using Patlak Graphical Analysis (Patlak et al., 1983).
+
+> Patlak CS, Blasberg RG, Fenstermacher JD. Graphical evaluation of blood-to-brain transfer constants from multiple-time uptake data. Journal of Cerebral Blood Flow & Metabolism. 1983 Mar 1;3(1):1-7.
 
 # Analysis Configuration
 
@@ -143,6 +138,9 @@ if (!is.null(model_config) && model_config$type == "Patlak") {
     config_items[["TAC Subset"]] <- "Use all frames"
   }
 
+  # Add model weights setting
+  config_items[["Use Model Weights"]] <- if(model_config$use_model_weights %||% FALSE) "Yes (transformed)" else "No"
+
   config_df <- tibble(
     Parameter = names(config_items),
     Value = map_chr(config_items, as.character)
@@ -164,6 +162,9 @@ if (!has_patlak_config) {
   cat("Invalid or missing Patlak configuration. This report should not have been generated.")
   knitr::knit_exit()
 }
+
+# Check if we should use model weights (transformed)
+use_model_weights <- model_config$use_model_weights %||% FALSE
 ```
 
 # Loading Data
@@ -171,22 +172,6 @@ if (!has_patlak_config) {
 ## Loading TAC Data
 
 ```{r load-tacs}
-weights_files <- list.files(analysis_folder,
-                        pattern = "*_weights.tsv",
-                        recursive = TRUE)
-
-weightsdata <- tibble(
-  filename = weights_files) %>%
-  mutate(basename = basename(filename)) %>%
-  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
-  unnest(attributes) %>%
-  group_by(filename) %>%
-  mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
-  ungroup() %>% 
-  unnest(tacs) %>% 
-  select(-filename, -basename, -measurement, -desc, -TAC)
-  
-
 tacs_files <- list.files(analysis_folder,
                         pattern = "*_desc-combinedregions_tacs.tsv",
                         recursive = TRUE)
@@ -198,10 +183,30 @@ tac_data <- tibble(
   unnest(attributes) %>%
   group_by(filename) %>%
   mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
-  ungroup() %>% 
-  unnest(tacs) %>% 
-  select(-basename, -measurement, -desc) %>% 
-  inner_join(weightsdata)
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-basename, -measurement, -desc)
+
+# Conditionally load and join weights data
+if (use_model_weights) {
+  weights_files <- list.files(analysis_folder,
+                          pattern = "*_weights.tsv",
+                          recursive = TRUE)
+
+  weightsdata <- tibble(
+    filename = weights_files) %>%
+    mutate(basename = basename(filename)) %>%
+    mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+    unnest(attributes) %>%
+    group_by(filename) %>%
+    mutate(tacs = map(filename, ~read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+    ungroup() %>%
+    unnest(tacs) %>%
+    select(-filename, -basename, -measurement, -desc, -TAC)
+
+  tac_data <- tac_data %>%
+    inner_join(weightsdata)
+}
 ```
 
 Because we are now working with kinetic modelling, we need to use minutes instead of seconds. Hence, we will henceforth use minutes for time.
@@ -485,7 +490,7 @@ model_data <- model_data %>%
                            tstar_type = model_config$tstar_type,
                            inpshift = ..3,
                            vB = ..4,
-                           weights = ..1$weights,
+                           weights = if(use_model_weights) ..1$weights else NULL,
                            frameStartEnd = frameStartEnd,
                            timeStartEnd = timeStartEnd))) %>%
   ungroup() %>%
@@ -526,8 +531,7 @@ par_table <- model_res %>%
   select(-output_stem) %>% 
   select(where(~ n_distinct(.x) > 1)) %>% 
   select(-any_of(c("vB", "inpshift"))) %>% 
-  unnest(par) %>% 
-  rename(Ki = K)
+  unnest(par)
   
 par_table %>%
   mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
@@ -547,8 +551,7 @@ par_se_table <- model_data %>%
   select(where(~ n_distinct(.x) > 1)) %>% 
   select(-any_of(c("vB", "inpshift"))) %>% 
   unnest(par.se) %>% 
-  select(where(~ mean(is.na(.x)) < 1)) %>% 
-  rename(Ki.se = K.se)
+  select(where(~ mean(is.na(.x)) < 1))
 
 par_se_table %>% 
   mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
@@ -709,12 +712,11 @@ walk2(savepar_pet$jsondat,
 ## PET Folder TSVs
 
 ```{r}
-savefits <- model_data %>% 
-  filter(success) %>% 
+savefits <- model_data %>%
+  filter(success) %>%
   mutate(fitvals = map(fit_Patlak, ~{
-    bind_cols(.x$tacs, .x$fitvals) %>%
-      # mutate(frame_start = Time - 0.5*Duration,
-      #        frame_end = Time + 0.5*Duration) %>% 
+    result <- bind_cols(.x$tacs, .x$fitvals) %>%
+      mutate(weights = .x$weights) %>% 
       select(
         # frame_start,
         # frame_end,
@@ -722,17 +724,20 @@ savefits <- model_data %>%
         # frame_dur = Duration,
         TAC = Target,
         Patlak_x = Patlak_Plasma,
-        Patlak_y = Patlak_ROI) %>% 
-      mutate(Patlak_fitted = as.numeric(.x$fit$coefficients[1]) + 
+        Patlak_y = Patlak_ROI,
+        weights) %>%
+      mutate(Patlak_fitted = as.numeric(.x$fit$coefficients[1]) +
           Patlak_x * as.numeric(.x$fit$coefficients[2]),
-        ) %>% 
-      mutate(frames_from_end = n() - (1:n())+1) %>% 
+        ) %>%
+      mutate(frames_from_end = n() - (1:n())+1) %>%
       mutate(Patlak_fitted = ifelse(frames_from_end < .x$tstarIncludedFrames,
                                    yes = Patlak_fitted,
-                                   no = NA)) %>% 
-      filter(!is.na(Patlak_x)) %>% 
+                                   no = NA)) %>%
+      filter(!is.na(Patlak_x)) %>%
       select(-frames_from_end)
-  })) %>% 
+
+    result
+  })) %>%
   select(sub, ses, task, trc, run, rec, pet, region, inpshift, fitvals) %>% 
   unnest(cols=c("fitvals")) %>% 
   group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task", 
