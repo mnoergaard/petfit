@@ -717,13 +717,20 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                              # Logan selection panel
                              conditionalPanel(
                                condition = "input.button == 'Logan'",
+                               checkboxInput("use_model_weights", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar", "t* (0 for all frames)", value = 10, min = 0, step = 1),
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
                                
                                h4("Other Parameters"),
                                selectInput("vB_source", "vB Parameter Source:",
@@ -733,31 +740,50 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source == 'set'",
                                  numericInput("vB_value", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
-                             
+
                              # MA1 selection panel
                              conditionalPanel(
                                condition = "input.button == 'MA1'",
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar", "t* (0 for all frames)", value = 10, min = 0, step = 1),
-                               
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
+
                                h4("Other Parameters"),
                                selectInput("vB_source", "vB Parameter Source:",
                                           choices = list("Set vB" = "set"),
@@ -766,30 +792,50 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source == 'set'",
                                  numericInput("vB_value", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
 
                              # Patlak selection panel
                              conditionalPanel(
                                condition = "input.button == 'Patlak'",
+                               checkboxInput("use_model_weights", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type", "",
-                                           choices = list("Number of Frames (from the end)" = "frame",
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar", "t* (0 for all frames)", value = 10, min = 0, step = 1),
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
 
                                h4("Other Parameters"),
                                selectInput("vB_source", "vB Parameter Source:",
@@ -802,14 +848,27 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
 
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame",
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type != 'none'",
+                                          numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
 
@@ -1026,14 +1085,21 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                              # Logan selection panel
                              conditionalPanel(
                                condition = "input.button2 == 'Logan'",
+                               checkboxInput("use_model_weights2", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type2", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar2", "t* (0 for all frames)", value = 10, min = 0, step = 1),
-                               
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type2", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar2", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
+
                                h4("Other Parameters"),
                                selectInput("vB_source2", "vB Parameter Source:",
                                           choices = list(
@@ -1047,17 +1113,30 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source2 == 'set'",
                                  numericInput("vB_value2", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type2", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type2", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
                              # MA1 selection panel
@@ -1065,12 +1144,18 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                condition = "input.button2 == 'MA1'",
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type2", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar2", "t* (0 for all frames)", value = 10, min = 0, step = 1),
-                               
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type2", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar2", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
+
                                h4("Other Parameters"),
                                selectInput("vB_source2", "vB Parameter Source:",
                                           choices = list(
@@ -1084,30 +1169,50 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source2 == 'set'",
                                  numericInput("vB_value2", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type2", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type2", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
 
                              # Patlak selection panel
                              conditionalPanel(
                                condition = "input.button2 == 'Patlak'",
+                               checkboxInput("use_model_weights2", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type2", "",
-                                           choices = list("Number of Frames (from the end)" = "frame",
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar2", "t* (0 for all frames)", value = 10, min = 0, step = 1),
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type2", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar2", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
 
                                h4("Other Parameters"),
                                selectInput("vB_source2", "vB Parameter Source:",
@@ -1120,14 +1225,27 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
 
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type2", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame",
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type2", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type2 != 'none'",
+                                          numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
 
@@ -1361,14 +1479,21 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                              # Logan selection panel
                              conditionalPanel(
                                condition = "input.button3 == 'Logan'",
+                               checkboxInput("use_model_weights3", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type3", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar3", "t* (0 for all frames)", value = 10, min = 0, step = 1),
-                               
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type3", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar3", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
+
                                h4("Other Parameters"),
                                selectInput("vB_source3", "vB Parameter Source:",
                                           choices = list(
@@ -1385,17 +1510,30 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source3 == 'set'",
                                  numericInput("vB_value3", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type3", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type3", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type3 != 'none'",
+                                          numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type3 != 'none'",
+                                          numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
                              # MA1 selection panel
@@ -1403,12 +1541,18 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                condition = "input.button3 == 'MA1'",
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                               radioButtons("tstar_type3", "",
-                                           choices = list("Number of Frames (from the end)" = "frame", 
-                                                         "Time Point (minutes)" = "time"),
-                                           selected = "frame", inline = TRUE),
-                               numericInput("tstar3", "t* (0 for all frames)", value = 10, min = 0, step = 1),
-                               
+                               fluidRow(
+                                 column(4,
+                                        selectInput("tstar_type3", "Selection Method:",
+                                                  choices = list("Frame Numbers (from end)" = "frame",
+                                                               "Time Point (minutes)" = "time"),
+                                                  selected = "frame")
+                                 ),
+                                 column(4,
+                                        numericInput("tstar3", "t* Value", value = 10, min = 0, step = 1)
+                                 )
+                               ),
+
                                h4("Other Parameters"),
                                selectInput("vB_source3", "vB Parameter Source:",
                                           choices = list(
@@ -1425,30 +1569,50 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
                                  condition = "input.vB_source3 == 'set'",
                                  numericInput("vB_value3", "vB Value", value = 0.05, min = 0, max = 1, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
-                               p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                               radioButtons("subset_type3", "Selection Method:",
-                                           choices = list("Frame Numbers" = "frame", 
-                                                         "Time Points (minutes)" = "time"),
-                                           selected = "time", inline = TRUE),
+                               p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                                fluidRow(
-                                 column(6, numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                 column(6, numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1))
+                                 column(4,
+                                        selectInput("subset_type3", "Selection Method:",
+                                                  choices = list("None" = "none",
+                                                               "Frame Numbers" = "frame",
+                                                               "Time Points (minutes)" = "time"),
+                                                  selected = "none")
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type3 != 'none'",
+                                          numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 ),
+                                 column(4,
+                                        conditionalPanel(
+                                          condition = "input.subset_type3 != 'none'",
+                                          numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1)
+                                        )
+                                 )
                                )
                              ),
 
                             # Patlak selection panel
                             conditionalPanel(
                               condition = "input.button3 == 'Patlak'",
+                              checkboxInput("use_model_weights3", "Use model weights (transformed)", value = FALSE),
                               h4("t* Definition"),
                               p("Define t* (time point for linear analysis start) using frame numbers or time."),
-                              radioButtons("tstar_type3", "",
-                                          choices = list("Number of Frames (from the end)" = "frame",
-                                                        "Time Point (minutes)" = "time"),
-                                          selected = "frame", inline = TRUE),
-                              numericInput("tstar3", "t* (0 for all frames)", value = 10, min = 0, step = 1),
+                              fluidRow(
+                                column(4,
+                                       selectInput("tstar_type3", "Selection Method:",
+                                                 choices = list("Frame Numbers (from end)" = "frame",
+                                                              "Time Point (minutes)" = "time"),
+                                                 selected = "frame")
+                                ),
+                                column(4,
+                                       numericInput("tstar3", "t* Value", value = 10, min = 0, step = 1)
+                                )
+                              ),
 
                               h4("Other Parameters"),
                               selectInput("vB_source3", "vB Parameter Source:",
@@ -1469,14 +1633,27 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
 
                               # TAC Subset Selection
                               h4("TAC Subset Selection"),
-                              p("Specify subset of TAC data for fitting (optional). Leave blank to use all frames."),
-                              radioButtons("subset_type3", "Selection Method:",
-                                          choices = list("Frame Numbers" = "frame",
-                                                        "Time Points (minutes)" = "time"),
-                                          selected = "time", inline = TRUE),
+                              p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
                               fluidRow(
-                                column(6, numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)),
-                                column(6, numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1))
+                                column(4,
+                                       selectInput("subset_type3", "Selection Method:",
+                                                 choices = list("None" = "none",
+                                                              "Frame Numbers" = "frame",
+                                                              "Time Points (minutes)" = "time"),
+                                                 selected = "none")
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type3 != 'none'",
+                                         numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type3 != 'none'",
+                                         numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                )
                               )
                             ),
 
@@ -1733,13 +1910,17 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
               updateNumericInput(session, paste0("tstar", suffix), value = model_config$tstar %||% 10)
             }
             if (!is.null(model_config$tstar_type)) {
-              updateRadioButtons(session, paste0("tstar_type", suffix), selected = model_config$tstar_type %||% "frame")
+              updateSelectInput(session, paste0("tstar_type", suffix), selected = model_config$tstar_type %||% "frame")
             }
             if (!is.null(model_config$vB_source)) {
               updateSelectInput(session, paste0("vB_source", suffix), selected = model_config$vB_source %||% "set")
             }
             if (!is.null(model_config$vB_value)) {
               updateNumericInput(session, paste0("vB_value", suffix), value = model_config$vB_value %||% 0.05)
+            }
+            # Use model weights checkbox (only for Logan and Patlak)
+            if (model_type == "Logan" || model_type == "Patlak") {
+              updateCheckboxInput(session, paste0("use_model_weights", suffix), value = model_config$use_model_weights %||% FALSE)
             }
             # TAC Subset Selection restoration
             if (!is.null(model_config$subset)) {
@@ -2218,7 +2399,12 @@ modelling_plasma_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_
           if (input[[paste0("vB_source", suffix)]] == "set" || is.null(input[[paste0("vB_source", suffix)]])) {
             model_params$vB_value = input[[paste0("vB_value", suffix)]] %||% 0.05
           }
-          
+
+          # Use model weights (transformed) - only for Logan and Patlak
+          if (model_type == "Logan" || model_type == "Patlak") {
+            model_params$use_model_weights = input[[paste0("use_model_weights", suffix)]] %||% FALSE
+          }
+
           # TAC Subset Selection
           subset_type <- input[[paste0("subset_type", suffix)]] %||% "none"
           start_point <- input[[paste0("start_point", suffix)]]

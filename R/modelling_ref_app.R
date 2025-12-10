@@ -704,6 +704,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                              # refLogan selection panel
                              conditionalPanel(
                                condition = "input.button == 'refLogan'",
+                               checkboxInput("use_model_weights", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time. Use 0 to include all frames."),
                                fluidRow(
@@ -992,6 +993,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                              # refLogan selection panel
                              conditionalPanel(
                                condition = "input.button2 == 'refLogan'",
+                               checkboxInput("use_model_weights2", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time. Use 0 to include all frames."),
                                fluidRow(
@@ -1019,7 +1021,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                  condition = "input.k2prime_source2 == 'set'",
                                  numericInput("k2prime_value2", "k2' Value", value = 0.1, min = 0, step = 0.001)
                                ),
-                               
+
                                # TAC Subset Selection
                                h4("TAC Subset Selection"),
                                p("Specify subset of TAC data for fitting (optional). This can further reduce the data defined at the data definition step."),
@@ -1299,6 +1301,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                              # refLogan selection panel
                              conditionalPanel(
                                condition = "input.button3 == 'refLogan'",
+                               checkboxInput("use_model_weights3", "Use model weights (transformed)", value = FALSE),
                                h4("t* Definition"),
                                p("Define t* (time point for linear analysis start) using frame numbers or time. Use 0 to include all frames."),
                                fluidRow(
@@ -1702,7 +1705,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
               updateNumericInput(session, paste0("tstar", suffix), value = model_config$tstar %||% 10)
             }
             if (!is.null(model_config$tstar_type)) {
-              updateRadioButtons(session, paste0("tstar_type", suffix), selected = model_config$tstar_type %||% "frame")
+              updateSelectInput(session, paste0("tstar_type", suffix), selected = model_config$tstar_type %||% "frame")
             }
             if (!is.null(model_config$k2prime_source)) {
               updateSelectInput(session, paste0("k2prime_source", suffix), selected = model_config$k2prime_source %||% "set")
@@ -1710,6 +1713,8 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
             if (!is.null(model_config$k2prime_value)) {
               updateNumericInput(session, paste0("k2prime_value", suffix), value = model_config$k2prime_value %||% 0.1)
             }
+            # Use model weights checkbox
+            updateCheckboxInput(session, paste0("use_model_weights", suffix), value = model_config$use_model_weights %||% FALSE)
             # TAC Subset Selection restoration
             if (!is.null(model_config$subset)) {
               updateSelectInput(session, paste0("subset_type", suffix), selected = model_config$subset$type %||% "none")
@@ -2193,7 +2198,9 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
           if (input[[paste0("k2prime_source", suffix)]] == "set" || is.null(input[[paste0("k2prime_source", suffix)]])) {
             model_params$k2prime_value = input[[paste0("k2prime_value", suffix)]] %||% 0.1
           }
-          
+          # Use model weights (transformed)
+          model_params$use_model_weights = input[[paste0("use_model_weights", suffix)]] %||% FALSE
+
           # TAC Subset Selection
           subset_type <- input[[paste0("subset_type", suffix)]] %||% "none"
           start_point <- input[[paste0("start_point", suffix)]]
