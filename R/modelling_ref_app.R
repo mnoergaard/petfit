@@ -555,6 +555,36 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                              ),
 
                              hr(),
+                             h3("SUVR Estimation"),
+                             p("Estimate a standardized uptake value ratio (SUVR) for each target region using an average uptake window. This uses the mean uptake within the specified time window for both target and reference regions.",
+                               style = "font-size:14px; margin-bottom:20px;"
+                             ),
+                             checkboxInput("suvr_enabled",
+                                           "Enable SUVR estimation",
+                                           value = FALSE),
+                             conditionalPanel(
+                               condition = "input.suvr_enabled",
+                               fluidRow(
+                                 column(4,
+                                        numericInput("suvr_time_start",
+                                                     "Start Time (minutes)",
+                                                     value = 40,
+                                                     min = 0,
+                                                     step = 0.1)
+                                 ),
+                                 column(4,
+                                        numericInput("suvr_time_end",
+                                                     "End Time (minutes)",
+                                                     value = 60,
+                                                     min = 0,
+                                                     step = 0.1)
+                                 )
+                               ),
+                               p("The SUVR window is applied to all frames that overlap the specified time range.",
+                                 style = "font-size:11px; color:#6c757d; margin-top:0px;")
+                             ),
+
+                             hr(),
                              actionButton("run_reference_tac", "▶ Prepare Reference TACs", class = "btn-success btn-lg")
                     ),
                     # Tab panel for tstar ----
@@ -1899,6 +1929,17 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
             }
           }
         }
+
+        if (!is.null(existing_config$SUVR)) {
+          updateCheckboxInput(session, "suvr_enabled",
+                              value = existing_config$SUVR$enabled %||% FALSE)
+          if (!is.null(existing_config$SUVR$time_window)) {
+            updateNumericInput(session, "suvr_time_start",
+                               value = existing_config$SUVR$time_window$start_min %||% 40)
+            updateNumericInput(session, "suvr_time_end",
+                               value = existing_config$SUVR$time_window$end_min %||% 60)
+          }
+        }
       }
     })
     
@@ -2087,6 +2128,18 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
         weights_formula = ref_weights_formula,
         weights_minweight = if(ref_weights_method_selected != "same_as_target") input$ref_weights_minweight %||% 0.25 else "",
         weights_custom_formula = if(ref_weights_method_selected == "custom") input$ref_weights_custom_formula %||% "" else ""
+      )
+
+      SUVR <- list(
+        enabled = input$suvr_enabled %||% FALSE,
+        time_window = if (input$suvr_enabled %||% FALSE) {
+          list(
+            start_min = input$suvr_time_start %||% 40,
+            end_min = input$suvr_time_end %||% 60
+          )
+        } else {
+          NULL
+        }
       )
       
       # Models (capture actual model inputs and parameters)
@@ -2346,6 +2399,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
         Subsetting = Subsetting,
         Weights = Weights,
         ReferenceTAC = ReferenceTAC,
+        SUVR = SUVR,
         Models = Models
       )
       
