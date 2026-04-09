@@ -145,6 +145,36 @@ if (!is.null(config$ReferenceTAC)) {
 }
 ```
 
+# SUVR Configuration
+
+```{r suvr-config}
+suvr_enabled <- isTRUE(config$SUVR$enabled %||% FALSE)
+
+if (suvr_enabled) {
+  suvr_window <- config$SUVR$time_window %||% list()
+  suvr_start_min <- suvr_window$start_min %||% NA_real_
+  suvr_end_min <- suvr_window$end_min %||% NA_real_
+
+  suvr_config_items <- list(
+    "SUVR Estimation" = "Enabled",
+    "Time Window Start (minutes)" = suvr_start_min,
+    "Time Window End (minutes)" = suvr_end_min,
+    "Uptake Averaging" = "Duration-weighted mean within window"
+  )
+} else {
+  suvr_config_items <- list(
+    "SUVR Estimation" = "Disabled"
+  )
+}
+
+suvr_config_df <- tibble(
+  Parameter = names(suvr_config_items),
+  Value = map_chr(suvr_config_items, as.character)
+)
+
+kable(suvr_config_df, caption = "SUVR Configuration")
+```
+
 ```{r setup-conditions, echo=FALSE}
 # Set up conditional execution based on reference TAC method
 fitting_method <- config$ReferenceTAC$fitting_method %||% "raw"
@@ -160,6 +190,12 @@ use_raw_refs <- fitting_method == "raw"
 use_feng1tc <- fitting_method == "feng1tc"
 use_spline <- fitting_method == "spline"
 do_noise_approx <- use_raw_refs && noise_approximation
+
+# SUVR settings
+suvr_enabled <- isTRUE(config$SUVR$enabled %||% FALSE)
+suvr_window <- config$SUVR$time_window %||% list()
+suvr_start_min <- suvr_window$start_min %||% NA_real_
+suvr_end_min <- suvr_window$end_min %||% NA_real_
 ```
 
 
@@ -721,6 +757,97 @@ str_glue("### Spline Reference Model Plots")
 walk2(ref_tac_fitdata$ref_fit,
       ref_tac_fitdata$pet, 
       ~print(plot(.x) + labs(title = .y)))
+```
+
+
+# SUVR Estimation
+
+```{r suvr-estimation-setup, echo=FALSE}
+validate_suvr_window <- function(start_min, end_min) {
+  if (is.na(start_min) || is.na(end_min)) {
+    stop("SUVR time window start/end times must be specified when SUVR estimation is enabled.")
+  }
+  if (end_min <= start_min) {
+    stop("SUVR time window end must be greater than start.")
+  }
+}
+
+calc_window_mean <- function(frame_start, frame_end, values, window_start, window_end) {
+  overlap <- pmax(0, pmin(frame_end, window_end) - pmax(frame_start, window_start))
+  if (all(overlap == 0 | is.na(overlap))) {
+    return(NA_real_)
+  }
+  sum(values * overlap, na.rm = TRUE) / sum(overlap, na.rm = TRUE)
+}
+```
+
+```{r suvr-estimation, eval=suvr_enabled, results='asis'}
+validate_suvr_window(suvr_start_min, suvr_end_min)
+
+window_start <- suvr_start_min * 60
+window_end <- suvr_end_min * 60
+
+str_glue("## SUVR Estimation
+
+Estimating SUVR using the {suvr_start_min}-{suvr_end_min} minute window. The average uptake is computed as a duration-weighted mean over frames overlapping the window.")
+```
+
+```{r suvr-calculation, eval=suvr_enabled}
+id_columns <- intersect(colnames(target_tac_data),
+                        c("sub", "ses", "trc", "rec", "task", "run", "pet", "segmentation"))
+
+target_suvr <- target_tac_data %>%
+  group_by(across(all_of(c(id_columns, "region", "filename")))) %>%
+  summarise(
+    target_mean = calc_window_mean(frame_start, frame_end, TAC, window_start, window_end),
+    .groups = "drop"
+  )
+
+ref_tac_long <- ref_tac_preddata %>%
+  select(-ref_tacs_json) %>%
+  unnest(ref_tacs) %>%
+  rename(filename = tac_filename)
+
+ref_suvr <- ref_tac_long %>%
+  group_by(across(all_of(c(id_columns, "filename")))) %>%
+  summarise(
+    reference_mean = calc_window_mean(frame_start, frame_end, RefTAC, window_start, window_end),
+    .groups = "drop"
+  )
+
+suvr_results <- target_suvr %>%
+  left_join(ref_suvr, by = c(id_columns, "filename")) %>%
+  mutate(SUVR = target_mean / reference_mean) %>%
+  arrange(pet, region)
+
+head(suvr_results) %>%
+  kable(caption = "SUVR Estimates (first rows)")
+```
+
+```{r suvr-saving, eval=suvr_enabled}
+output_metadata <- list(
+  Description = "SUVR estimates computed from target and reference TACs.",
+  ReferenceRegion = ref_region_name,
+  ReferenceTACMethod = fitting_method_display,
+  WindowStartMinutes = suvr_start_min,
+  WindowEndMinutes = suvr_end_min,
+  Averaging = "Duration-weighted mean over overlapping frames",
+  Units = "SUVR (unitless)"
+)
+
+suvr_results %>%
+  group_by(filename, pet) %>%
+  group_walk(~{
+    target_dir <- file.path(analysis_folder, dirname(.y$filename))
+    output_filename <- paste0(.y$pet, "_desc-suvr_suvr.tsv")
+    output_path <- file.path(target_dir, output_filename)
+
+    write_tsv(.x, output_path)
+
+    json_output <- jsonlite::toJSON(output_metadata, pretty = TRUE, auto_unbox = TRUE)
+    json_path <- str_replace(output_path, ".tsv", ".json")
+    writeLines(json_output, json_path)
+  })
 ```
 
 
