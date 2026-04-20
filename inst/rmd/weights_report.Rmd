@@ -324,7 +324,7 @@ if (radioisotope == "Other" && !is.null(halflife)) {
 
 ```{r weights-data, echo=create_custom_weights, eval=create_custom_weights}
 weights_data <- weights_tacdata %>% 
-  rename(tac = TAC) %>% 
+  coerce_tac_column_name(target_col = "tac") %>% 
   mutate(tac_uncor = decay_uncorrect(frame_start, frame_end, tac,
                                      radioisotope = radioisotope_for_uncorrection,
                                      radionuclide_halflife = radionuclide_halflife)) %>% 
@@ -341,7 +341,7 @@ apply_weight_formula <- function(data, formula_string) {
 
 weights_output <- apply_weight_formula(weights_data, config$Weights$formula) %>% 
   select(-tac_uncor, -corrections) %>% 
-  rename(TAC = tac)
+  coerce_tac_column_name(target_col = "TAC", candidates = c("TAC", "tac"))
 ```
 
 ```{r custom-weights-message, echo=create_custom_weights, eval=create_custom_weights}
