@@ -1031,6 +1031,12 @@ create_petfit_combined_tacs <- function(petfit_regions_files_path, derivatives_f
       TAC = kinfitr::unit_convert(TAC, from_units = original_tac_units, to_units = "kBq"),
       seg_meanTAC = kinfitr::unit_convert(seg_meanTAC, from_units = original_tac_units, to_units = "kBq")
     )
+
+  # Backward-compatibility alias:
+  # Some downstream reports/templates still refer to lower-case `tac`.
+  # Keep canonical `TAC` while also writing a mirrored `tac` column.
+  all_combined_data <- all_combined_data %>%
+    dplyr::mutate(tac = TAC)
   
   # Save single consolidated TSV
   output_file <- file.path(output_dir, "desc-combinedregions_tacs.tsv")
