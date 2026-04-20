@@ -604,7 +604,8 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                                      "SRTM2 (Non-linear)" = "SRTM2",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
-                                                     "MRTM2 (Linear)" = "MRTM2"
+                                                     "MRTM2 (Linear)" = "MRTM2",
+                                                     "SUVR (Static ratio)" = "SUVR"
                                          ),
                                          selected = "none"),
                              # SRTM selection panel
@@ -845,6 +846,18 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                )
                              ),
 
+
+                             # SUVR selection panel
+                             conditionalPanel(
+                               condition = "input.button == 'SUVR'",
+                               h4("SUVR Time Window"),
+                               p("Define the averaging window in minutes. SUVR is computed as mean(target)/mean(reference) within this window."),
+                               fluidRow(
+                                 column(4, numericInput("suvr_start", "Window Start (min)", value = 40, min = 0, step = 0.1)),
+                                 column(4, numericInput("suvr_end", "Window End (min)", value = 60, min = 0, step = 0.1))
+                               )
+                             ),
+
                              # Shared k2' section for models that need it (Model 1)
                              conditionalPanel(
                                condition = "input.button == 'SRTM2' || input.button == 'refLogan' || input.button == 'MRTM2'",
@@ -880,7 +893,8 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                                      "SRTM2 (Non-linear)" = "SRTM2",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
-                                                     "MRTM2 (Linear)" = "MRTM2"
+                                                     "MRTM2 (Linear)" = "MRTM2",
+                                                     "SUVR (Static ratio)" = "SUVR"
                                          ),
                                          selected = "none"),
                              # SRTM selection panel
@@ -1121,6 +1135,18 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                )
                              ),
 
+
+                             # SUVR selection panel
+                             conditionalPanel(
+                               condition = "input.button2 == 'SUVR'",
+                               h4("SUVR Time Window"),
+                               p("Define the averaging window in minutes. SUVR is computed as mean(target)/mean(reference) within this window."),
+                               fluidRow(
+                                 column(4, numericInput("suvr_start2", "Window Start (min)", value = 40, min = 0, step = 0.1)),
+                                 column(4, numericInput("suvr_end2", "Window End (min)", value = 60, min = 0, step = 0.1))
+                               )
+                             ),
+
                              # Shared k2' section for models that need it (Model 2)
                              conditionalPanel(
                                condition = "input.button2 == 'SRTM2' || input.button2 == 'refLogan' || input.button2 == 'MRTM2'",
@@ -1161,7 +1187,8 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                                      "SRTM2 (Non-linear)" = "SRTM2",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
-                                                     "MRTM2 (Linear)" = "MRTM2"
+                                                     "MRTM2 (Linear)" = "MRTM2",
+                                                     "SUVR (Static ratio)" = "SUVR"
                                          ),
                                          selected = "none"),
                              # SRTM selection panel
@@ -1399,6 +1426,18 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                           numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1)
                                         )
                                  )
+                               )
+                             ),
+
+
+                             # SUVR selection panel
+                             conditionalPanel(
+                               condition = "input.button3 == 'SUVR'",
+                               h4("SUVR Time Window"),
+                               p("Define the averaging window in minutes. SUVR is computed as mean(target)/mean(reference) within this window."),
+                               fluidRow(
+                                 column(4, numericInput("suvr_start3", "Window Start (min)", value = 40, min = 0, step = 0.1)),
+                                 column(4, numericInput("suvr_end3", "Window End (min)", value = 60, min = 0, step = 0.1))
                                )
                              ),
 
@@ -1803,6 +1842,9 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
               updateNumericInput(session, paste0("start_point", suffix), value = model_config$subset$start)
               updateNumericInput(session, paste0("end_point", suffix), value = model_config$subset$end)
             }
+          } else if (!is.null(model_type) && model_type == "SUVR") {
+            updateNumericInput(session, paste0("suvr_start", suffix), value = model_config$suvr_start %||% 40)
+            updateNumericInput(session, paste0("suvr_end", suffix), value = model_config$suvr_end %||% 60)
           }
           
           # Restore common parameters for all model types
@@ -2308,6 +2350,9 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
               end = end_point
             )
           }
+        } else if (model_type == "SUVR") {
+          model_params$suvr_start = input[[paste0("suvr_start", suffix)]] %||% 40
+          model_params$suvr_end = input[[paste0("suvr_end", suffix)]] %||% 60
         }
         
         # Add common parameters for all models
