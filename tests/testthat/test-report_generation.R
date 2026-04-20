@@ -23,6 +23,7 @@ test_that("get_model_template maps non-invasive models correctly", {
   expect_equal(get_model_template("refLogan"), "reflogan_report.Rmd")
   expect_equal(get_model_template("MRTM1"), "mrtm1_report.Rmd")
   expect_equal(get_model_template("MRTM2"), "mrtm2_report.Rmd")
+  expect_equal(get_model_template("SUVR"), "suvr_report.Rmd")
 })
 
 test_that("get_model_template errors on NULL input", {

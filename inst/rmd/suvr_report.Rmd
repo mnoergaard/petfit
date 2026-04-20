@@ -1,0 +1,208 @@
+---
+title: "SUVR Estimation Report"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+params:
+  cores: 1
+  model_number: "Model 1"
+  analysis_folder: NULL
+  bids_dir: NULL
+  blood_dir: NULL
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(knitr)
+library(jsonlite)
+library(glue)
+
+analysis_folder <- params$analysis_folder
+model_number <- params$model_number
+
+config_path <- file.path(analysis_folder, "desc-petfitoptions_config.json")
+config <- NULL
+if (file.exists(config_path)) {
+  config <- jsonlite::fromJSON(config_path)
+  config <- coerce_bounds_numeric(config)
+}
+```
+
+```{r, include=FALSE}
+desc <- str_remove(str_to_lower(model_number), " ")
+oldfiles <- list.files(analysis_folder, pattern = desc, recursive = TRUE, full.names = TRUE)
+file.remove(oldfiles)
+```
+
+This report estimates standardized uptake value ratio (SUVR) from target and reference TACs in a user-defined time window.
+
+# Analysis Configuration
+
+**Model:** `r params$model_number` - SUVR
+
+**Analysis folder:** `r params$analysis_folder`
+
+**Generated on:** `r format(Sys.time(), "%Y-%m-%d %H:%M:%S")`
+
+```{r model-config}
+model_config <- NULL
+if (!is.null(config$Models)) {
+  if (params$model_number == "Model 1") {
+    model_config <- config$Models$Model1
+  } else if (params$model_number == "Model 2") {
+    model_config <- config$Models$Model2
+  } else if (params$model_number == "Model 3") {
+    model_config <- config$Models$Model3
+  }
+}
+
+if (is.null(model_config) || model_config$type != "SUVR") {
+  cat("Invalid or missing SUVR configuration.")
+  knitr::knit_exit()
+}
+
+suvr_start <- model_config$suvr_start %||% 40
+suvr_end <- model_config$suvr_end %||% 60
+
+config_df <- tibble(
+  Parameter = c("Model Type", "SUVR Window Start (min)", "SUVR Window End (min)"),
+  Value = c("SUVR", suvr_start, suvr_end)
+)
+
+kable(config_df, caption = "SUVR Configuration")
+```
+
+# Loading Data
+
+```{r load-data}
+tacs_files <- list.files(analysis_folder,
+  pattern = "*_desc-targetregions_tacs.tsv",
+  recursive = TRUE
+)
+
+ref_files <- list.files(analysis_folder,
+  pattern = "*_desc-ref_tacs.tsv",
+  recursive = TRUE
+)
+
+if (length(tacs_files) == 0 || length(ref_files) == 0) {
+  stop("Required TAC files not found in analysis folder.")
+}
+
+tac_data <- tibble(filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(tacs = map(filename, ~ read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-basename, -measurement, -desc) %>%
+  rename(target_tac = tac)
+
+ref_data <- tibble(filename = ref_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  group_by(filename) %>%
+  mutate(tacs = map(filename, ~ read_tsv(file.path(analysis_folder, .x), show_col_types = FALSE))) %>%
+  ungroup() %>%
+  unnest(tacs) %>%
+  select(-basename, -measurement, -desc, -filename, -volume_mm3) %>%
+  rename(reference_tac = tac)
+
+model_data <- tac_data %>%
+  inner_join(ref_data,
+    by = intersect(colnames(tac_data), colnames(ref_data))
+  )
+```
+
+# SUVR Estimation
+
+```{r estimate-suvr}
+group_cols <- intersect(
+  c("sub", "ses", "trc", "rec", "task", "run", "pet", "region"),
+  colnames(model_data)
+)
+
+suvr_results <- model_data %>%
+  group_by(across(all_of(group_cols))) %>%
+  summarise(
+    n_frames_in_window = sum(frame_mid / 60 >= suvr_start & frame_mid / 60 <= suvr_end),
+    target_mean = {
+      idx <- frame_mid / 60 >= suvr_start & frame_mid / 60 <= suvr_end
+      if (!any(idx)) NA_real_ else weighted.mean(target_tac[idx], frame_dur[idx], na.rm = TRUE)
+    },
+    reference_mean = {
+      idx <- frame_mid / 60 >= suvr_start & frame_mid / 60 <= suvr_end
+      if (!any(idx)) NA_real_ else weighted.mean(reference_tac[idx], frame_dur[idx], na.rm = TRUE)
+    },
+    SUVR = target_mean / reference_mean,
+    .groups = "drop"
+  ) %>%
+  mutate(
+    suvr_start_min = suvr_start,
+    suvr_end_min = suvr_end
+  )
+
+kable(head(suvr_results, 20), caption = "SUVR Estimates (first 20 rows)")
+```
+
+# Saving Parameters
+
+```{r save-outputs}
+write_tsv(
+  suvr_results,
+  file = paste0(
+    analysis_folder, "/",
+    "model_", "SUVR", "_",
+    "desc-", desc, "_",
+    "kinpar.tsv"
+  )
+)
+
+folder_data <- tibble(filename = tacs_files) %>%
+  mutate(basename = basename(filename)) %>%
+  mutate(attributes = map(filename, kinfitr:::bids_filename_attributes)) %>%
+  unnest(attributes) %>%
+  mutate(dirname = dirname(filename)) %>%
+  select(-filename, -basename, -measurement, -desc)
+
+savepar_pet <- suvr_results %>%
+  group_by(across(intersect(colnames(.), c("sub", "ses", "trc", "rec", "task", "run", "pet")))) %>%
+  nest(.key = "kinpars") %>%
+  inner_join(folder_data) %>%
+  mutate(filename = paste0(
+    analysis_folder, "/", dirname, "/", pet, "_",
+    "model_", "SUVR", "_",
+    "desc-", desc, "_",
+    "kinpar.tsv"
+  ))
+
+walk2(savepar_pet$kinpars, savepar_pet$filename, ~ write_tsv(.x, .y))
+
+savepar_pet <- savepar_pet %>%
+  group_by(pet) %>%
+  mutate(jsondat = map(kinpars, ~ list(
+    Description = "Standardized Uptake Value Ratio (SUVR) estimate.",
+    ModelName = "SUVR",
+    AdditionalModelDetails = str_glue("SUVR computed from average uptake in {suvr_start}-{suvr_end} min window."),
+    SUVR = "Target region mean uptake divided by reference region mean uptake.",
+    target_mean = "Duration-weighted mean target uptake in the SUVR window.",
+    reference_mean = "Duration-weighted mean reference uptake in the SUVR window."
+  ))) %>%
+  mutate(jsondat = jsonlite::toJSON(jsondat, pretty = TRUE, auto_unbox = TRUE)) %>%
+  mutate(filename_json = str_replace(filename, ".tsv", ".json"))
+
+walk2(savepar_pet$jsondat, savepar_pet$filename_json, ~ writeLines(.x, .y))
+```
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```
