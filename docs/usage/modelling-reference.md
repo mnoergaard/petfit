@@ -91,7 +91,7 @@ When enabled, compares the noise level in the reference region to target regions
 
 Fits non-invasive kinetic models to each PET measurement and region. You can configure up to three models simultaneously.
 
-**Available models:** SRTM, SRTM2, refLogan, MRTM1, MRTM2, refPatlak. See [Supported models](../models.md) for details.
+**Available models:** SRTM, SRTM2, refLogan, MRTM1, MRTM2, SUVR. See [Supported models](../models.md) for details.
 
 Models that require a **k2prime** value (SRTM2, MRTM2, refLogan) can obtain it from:
 

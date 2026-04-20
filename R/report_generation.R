@@ -221,7 +221,8 @@ get_model_template <- function(model_type) {
     "SRTM2" = "srtm2_report.Rmd",
     "refLogan" = "reflogan_report.Rmd",
     "MRTM1" = "mrtm1_report.Rmd",
-    "MRTM2" = "mrtm2_report.Rmd"
+    "MRTM2" = "mrtm2_report.Rmd",
+    "SUVR" = "suvr_report.Rmd"
   )
 
   template_name <- template_map[[model_type]]

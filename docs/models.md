@@ -135,6 +135,17 @@ A constrained version of MRTM1 using a fixed k2prime value.
 | R1 | Relative delivery |
 | k2prime | Fixed reference region efflux rate (provided as a prior) |
 
+### SUVR — Standardized uptake value ratio
+
+A static ratio method that estimates SUVR as the duration-weighted mean target uptake divided by the duration-weighted mean reference uptake in a specified time window.
+
+**Parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| suvr_start | Start of SUVR averaging window (minutes) |
+| suvr_end | End of SUVR averaging window (minutes) |
+
 ### refPatlak — Reference Patlak analysis
 
 A graphical method for estimating the net influx rate using a reference region, appropriate for irreversible tracers.
