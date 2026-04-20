@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libxml2-dev \
     libgit2-dev \
+    libuv1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user and group with specified IDs
