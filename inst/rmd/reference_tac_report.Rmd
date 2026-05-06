@@ -39,6 +39,123 @@ if (cores > 1) {
 
 theme_set(theme_light())
 
+constant_reference_tac_fit <- function(t_tac, tac, weights = NULL, reason = "") {
+  if (is.null(weights)) {
+    weights <- rep(1, length(tac))
+  }
+
+  fitted_tac <- weighted.mean(tac, w = weights, na.rm = TRUE)
+
+  structure(
+    list(
+      tacs = tibble(
+        Time = t_tac,
+        TAC = tac,
+        TAC_fitted = rep(fitted_tac, length(tac))
+      ),
+      par = tibble(t0 = min(t_tac, na.rm = TRUE)),
+      fit_message = reason,
+      petfit_constant_fallback = TRUE
+    ),
+    class = c("petfit_constant_reference_tac_fit", "list")
+  )
+}
+
+fit_reference_spline_tac <- function(t_tac, tac, weights = NULL, spline_df = NULL) {
+  spline_df <- as.numeric(spline_df %||% NA_real_)
+
+  if (!is.na(spline_df) && spline_df < 2) {
+    return(constant_reference_tac_fit(
+      t_tac = t_tac,
+      tac = tac,
+      weights = weights,
+      reason = str_glue("Spline degrees of freedom ({spline_df}) is below 2; using a weighted constant fit.")
+    ))
+  }
+
+  if (!exists("spline_tac", mode = "function")) {
+    stop("spline_tac() is not available. Please check that the installed kinfitr version supports reference TAC spline fitting.")
+  }
+
+  spline_args <- list(
+    t_tac = t_tac,
+    tac = tac,
+    weights = weights
+  )
+
+  spline_formals <- names(formals(spline_tac))
+  if (!is.na(spline_df) && "df" %in% spline_formals) {
+    spline_args$df <- spline_df
+  } else if (!is.na(spline_df) && "k" %in% spline_formals) {
+    spline_args$k <- spline_df
+  }
+
+  tryCatch(
+    do.call(spline_tac, spline_args),
+    error = function(e) {
+      constant_reference_tac_fit(
+        t_tac = t_tac,
+        tac = tac,
+        weights = weights,
+        reason = str_glue("Spline fit failed ({e$message}); using a weighted constant fit.")
+      )
+    }
+  )
+}
+
+reference_spline_predictions <- function(ref_fit, ref_tacs) {
+  if (!all(c("Time", "TAC_fitted") %in% colnames(ref_fit$tacs))) {
+    stop("Spline fit output does not contain Time and TAC_fitted columns.")
+  }
+
+  original_time <- ref_tacs$frame_mid / 60
+  fit_time <- ref_fit$tacs$Time
+
+  # Some spline fits return a dense, zero-based prediction grid rather than one
+  # fitted value per original PET frame. Interpolate back onto the original frame
+  # midpoints so downstream files and plots keep the BIDS TAC timing.
+  if (!(min(fit_time, na.rm = TRUE) <= min(original_time, na.rm = TRUE) &&
+        max(fit_time, na.rm = TRUE) >= max(original_time, na.rm = TRUE))) {
+    shifted_fit_time <- fit_time + min(original_time, na.rm = TRUE) - min(fit_time, na.rm = TRUE)
+
+    if (min(shifted_fit_time, na.rm = TRUE) <= min(original_time, na.rm = TRUE) &&
+        max(shifted_fit_time, na.rm = TRUE) >= max(original_time, na.rm = TRUE)) {
+      fit_time <- shifted_fit_time
+    }
+  }
+
+  fitted_tac <- approx(
+    x = fit_time,
+    y = ref_fit$tacs$TAC_fitted,
+    xout = original_time,
+    rule = 2,
+    ties = "ordered"
+  )$y
+
+  ref_tacs %>%
+    transmute(
+      frame_start,
+      frame_mid,
+      RefTAC = RefTAC,
+      RefTAC_fitted = fitted_tac
+    )
+}
+
+plot_reference_spline_fit <- function(ref_fit, ref_tacs) {
+  plot_data <- reference_spline_predictions(ref_fit, ref_tacs) %>%
+    mutate(
+      plot_time = frame_mid / 60,
+      plot_start = frame_start / 60
+    )
+
+  ggplot(plot_data, aes(x = plot_time, y = RefTAC)) +
+    geom_point(colour = "black") +
+    geom_line(aes(y = RefTAC_fitted), colour = "black") +
+    coord_cartesian(xlim = range(plot_data$plot_start, plot_data$plot_time, na.rm = TRUE)) +
+    labs(x = "Time (min)", y = "Radioactivity (kBq)") +
+    theme_light()
+}
+
 # Use parameters (from params or debugging section above)
 analysis_folder <- params$analysis_folder
 bids_dir <- params$bids_dir
@@ -640,17 +757,23 @@ ref_tac_fitdata <- ref_tac_data %>%
   ungroup()
 
 ref_tac_fitdata <- ref_tac_fitdata %>%
-  mutate(ref_fit = future_map(ref_tacs, ~spline_tac(t_tac   = .x$frame_mid/60,
-                                              tac     = .x$RefTAC,
-                                              weights = .x$ref_weights),
+  mutate(ref_fit = future_map(ref_tacs, ~fit_reference_spline_tac(t_tac     = .x$frame_mid/60,
+                                                                  tac       = .x$RefTAC,
+                                                                  weights   = .x$ref_weights,
+                                                                  spline_df = spline_df),
                               .options = furrr_options(seed = TRUE)))
 
+spline_fit_messages <- ref_tac_fitdata %>%
+  mutate(fit_message = map_chr(ref_fit, ~.x$fit_message %||% "")) %>%
+  filter(fit_message != "") %>%
+  select(any_of(c("sub", "ses", "trc", "rec", "task", "run", "pet")), fit_message)
+
+if (nrow(spline_fit_messages) > 0) {
+  print(kable(spline_fit_messages, caption = "Spline fitting fallbacks"))
+}
+
 ref_tac_preddata <- ref_tac_fitdata %>%
-  mutate(ref_preds = map(ref_fit, ~.x$tacs %>%
-                          rename(frame_mid = Time,
-                                 RefTAC = TAC,
-                                 RefTAC_fitted = TAC_fitted) %>%
-                           mutate(frame_mid = frame_mid*60))) %>%
+  mutate(ref_preds = map2(ref_fit, ref_tacs, reference_spline_predictions)) %>%
   select(-ref_fit) %>%
   mutate(ref_tacs = map2(ref_tacs, ref_preds, inner_join)) %>%
   mutate(ref_tacs = map(ref_tacs, ~.x %>%
@@ -718,9 +841,10 @@ str_glue("### Spline Reference Model Plots")
 ```
 
 ```{r spline-plotting, eval=use_spline, echo=use_spline}
-walk2(ref_tac_fitdata$ref_fit,
-      ref_tac_fitdata$pet, 
-      ~print(plot(.x) + labs(title = .y)))
+pwalk(list(ref_tac_fitdata$ref_fit,
+          ref_tac_fitdata$ref_tacs,
+          ref_tac_fitdata$pet),
+     ~print(plot_reference_spline_fit(..1, ..2) + labs(title = ..3)))
 ```
 
 
