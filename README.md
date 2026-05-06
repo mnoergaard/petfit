@@ -19,7 +19,7 @@ The web apps allow users to graphically define configurations for the analysis.
 
 - **Region Definition App**: Creates combined regional TACs from PET Preprocessing Derivative data
 - **Modelling App with Plasma Input**: Configures invasive kinetic models (1TCM, 2TCM, 2TCM_irr, Logan, MA1, Patlak) requiring blood input
-- **Modelling App with Reference Tissue**: Configures non-invasive kinetic models (SRTM, refLogan, MRTM1, MRTM2) using reference regions
+- **Modelling App with Reference Tissue**: Configures non-invasive kinetic models and ratios (SRTM, SRTM2, SUVR, refLogan, MRTM1, MRTM2) using reference regions
 
 The interactive apps allow you to:
 - Configure analyses step-by-step with a graphical interface
@@ -419,6 +419,7 @@ derivatives/                       # Processed outputs
 ### Non-Invasive Models (Reference Region Based) (in development...)
 - **SRTM**: Simplified reference tissue model
 - **SRTM2**: Simplified reference tissue model 2
+- **SUVR**: Target-to-reference uptake ratio over a selected frame or time window
 - **refLogan**: Reference Logan analysis
 - **MRTM1**: Multilinear reference tissue model
 - **MRTM2**: Multilinear reference tissue model 2

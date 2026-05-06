@@ -17,7 +17,7 @@
 #' This function provides a unified interface to launch petfit interactive applications built on kinfitr:
 #' - "regiondef": Region Definition App for creating brain region definitions and generating combined TACs
 #' - "modelling_plasma": Plasma Input Modelling App for invasive kinetic models (1TCM, 2TCM, Logan, MA1)
-#' - "modelling_ref": Reference Tissue Modelling App for non-invasive kinetic models (SRTM, refLogan, MRTM1, MRTM2)
+#' - "modelling_ref": Reference Tissue Modelling App for non-invasive models and ratios (SRTM, SRTM2, SUVR, refLogan, MRTM1, MRTM2)
 #'
 #' Parameter usage:
 #' - regiondef: Uses bids_dir, derivatives_dir, petfit_output_foldername

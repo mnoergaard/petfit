@@ -602,6 +602,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                          choices = c("No Model 1" = "none",
                                                      "SRTM (Non-linear)" = "SRTM",
                                                      "SRTM2 (Non-linear)" = "SRTM2",
+                                                     "SUVR (AUC ratio)" = "SUVR",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
                                                      "MRTM2 (Linear)" = "MRTM2"
@@ -705,6 +706,34 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                               numericInput("multstart_iter", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
 
                               uiOutput("subset_validation_error")
+                            ),
+
+                            # SUVR selection panel
+                            conditionalPanel(
+                              condition = "input.button == 'SUVR'",
+                              h4("Time Window"),
+                              p("Estimate SUVR as the target-to-reference AUC ratio over a selected frame or time window. Use all frames for static data or whole-TAC ratios."),
+                              fluidRow(
+                                column(4,
+                                       selectInput("subset_type", "Selection Method:",
+                                                 choices = list("All Frames" = "none",
+                                                              "Frame Numbers" = "frame",
+                                                              "Time Points (minutes)" = "time"),
+                                                 selected = "none")
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type != 'none'",
+                                         numericInput("start_point", "Start Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type != 'none'",
+                                         numericInput("end_point", "End Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                )
+                              )
                             ),
 
                              # refLogan selection panel
@@ -878,6 +907,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                          choices = c("No Model 2" = "none",
                                                      "SRTM (Non-linear)" = "SRTM",
                                                      "SRTM2 (Non-linear)" = "SRTM2",
+                                                     "SUVR (AUC ratio)" = "SUVR",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
                                                      "MRTM2 (Linear)" = "MRTM2"
@@ -981,6 +1011,34 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                               numericInput("multstart_iter2", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
 
                               uiOutput("subset_validation_error2")
+                            ),
+
+                            # SUVR selection panel
+                            conditionalPanel(
+                              condition = "input.button2 == 'SUVR'",
+                              h4("Time Window"),
+                              p("Estimate SUVR as the target-to-reference AUC ratio over a selected frame or time window. Use all frames for static data or whole-TAC ratios."),
+                              fluidRow(
+                                column(4,
+                                       selectInput("subset_type2", "Selection Method:",
+                                                 choices = list("All Frames" = "none",
+                                                              "Frame Numbers" = "frame",
+                                                              "Time Points (minutes)" = "time"),
+                                                 selected = "none")
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type2 != 'none'",
+                                         numericInput("start_point2", "Start Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type2 != 'none'",
+                                         numericInput("end_point2", "End Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                )
+                              )
                             ),
 
                              # refLogan selection panel
@@ -1159,6 +1217,7 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                                          choices = c("No Model 3" = "none",
                                                      "SRTM (Non-linear)" = "SRTM",
                                                      "SRTM2 (Non-linear)" = "SRTM2",
+                                                     "SUVR (AUC ratio)" = "SUVR",
                                                      "refLogan (Linear)" = "refLogan",
                                                      "MRTM1 (Linear)" = "MRTM1",
                                                      "MRTM2 (Linear)" = "MRTM2"
@@ -1262,6 +1321,34 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
                               numericInput("multstart_iter3", "Number of Iterations", value = 1, min = 1, max = 50, step = 1),
 
                               uiOutput("subset_validation_error3")
+                            ),
+
+                            # SUVR selection panel
+                            conditionalPanel(
+                              condition = "input.button3 == 'SUVR'",
+                              h4("Time Window"),
+                              p("Estimate SUVR as the target-to-reference AUC ratio over a selected frame or time window. Use all frames for static data or whole-TAC ratios."),
+                              fluidRow(
+                                column(4,
+                                       selectInput("subset_type3", "Selection Method:",
+                                                 choices = list("All Frames" = "none",
+                                                              "Frame Numbers" = "frame",
+                                                              "Time Points (minutes)" = "time"),
+                                                 selected = "none")
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type3 != 'none'",
+                                         numericInput("start_point3", "Start Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                ),
+                                column(4,
+                                       conditionalPanel(
+                                         condition = "input.subset_type3 != 'none'",
+                                         numericInput("end_point3", "End Point", value = NULL, min = 0, step = 0.1)
+                                       )
+                                )
+                              )
                             ),
 
                              # refLogan selection panel
@@ -2978,6 +3065,12 @@ modelling_ref_app <- function(bids_dir = NULL, derivatives_dir = NULL, blood_dir
   
   # Run with Docker-compatible settings
   cat("If running from within a docker container, open one of the following addresses in your web browser.\n")
+<<<<<<< Updated upstream
   cat("http://localhost:3838\n")
   shiny::runApp(app, host = "0.0.0.0", port = 3838)
 }
+=======
+  cat("http://localhost:", shiny_port, "\n", sep = "")
+  shiny::runApp(app, host = "0.0.0.0", port = shiny_port)
+}
+>>>>>>> Stashed changes

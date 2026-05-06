@@ -219,6 +219,7 @@ get_model_template <- function(model_type) {
     "Fit Delay" = "fit_delay_report.Rmd",
     "SRTM" = "srtm_report.Rmd",
     "SRTM2" = "srtm2_report.Rmd",
+    "SUVR" = "suvr_report.Rmd",
     "refLogan" = "reflogan_report.Rmd",
     "MRTM1" = "mrtm1_report.Rmd",
     "MRTM2" = "mrtm2_report.Rmd"
