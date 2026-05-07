@@ -91,9 +91,11 @@ if (!is.null(config$Models)) {
 if (!is.null(model_config) && model_config$type == "SUVR") {
   config_items <- list("Model Type" = "SUVR (target-to-reference AUC ratio)")
 
-  if (!is.null(model_config$subset)) {
+  subset_type <- model_config$subset$type %||% "none"
+
+  if (!is.null(model_config$subset) && subset_type %in% c("frame", "time")) {
     subset_info <- paste0(
-      "Type: ", model_config$subset$type %||% "none",
+      "Type: ", subset_type,
       ", Start: ", model_config$subset$start %||% "Not set",
       ", End: ", model_config$subset$end %||% "Not set"
     )
@@ -185,56 +187,117 @@ model_data <- tac_data %>%
 
 ```{r suvr-functions}
 subset_config <- model_config$subset
-subset_type <- subset_config$type %||% "none"
-start_point <- subset_config$start
-end_point <- subset_config$end
 
-is_empty <- function(x) {
-  is.null(x) || length(x) == 0 || is.na(x)
+frameStartEnd <- NULL
+timeStartEnd <- NULL
+
+if (!is.null(subset_config) && (!is.null(subset_config$start) || !is.null(subset_config$end))) {
+  if (subset_config$type == "frame") {
+    frameStartEnd <- c(subset_config$start, subset_config$end)
+  } else if (subset_config$type == "time") {
+    timeStartEnd <- c(subset_config$start, subset_config$end)
+  }
 }
 
-estimate_suvr <- function(tac, subset_type = "none", start_point = NULL, end_point = NULL) {
+call_kinfitr_suv <- function(tac_values, tac, frameStartEnd = NULL, timeStartEnd = NULL) {
+  suv_args <- list(
+    tac = tac_values,
+    t_tac = tac$frame_mid,
+    dur_tac = tac$frame_dur,
+    injRad = 1,
+    bodymass = 1
+  )
+
+  if (!is.null(frameStartEnd)) {
+    suv_args$frameStartEnd <- frameStartEnd
+  }
+
+  if (!is.null(timeStartEnd)) {
+    if (!"timeStartEnd" %in% names(formals(kinfitr::SUV))) {
+      stop("The installed kinfitr::SUV() does not support timeStartEnd. Please update kinfitr to use time-windowed SUVR.")
+    }
+
+    suv_args$timeStartEnd <- timeStartEnd
+  }
+
+  do.call(kinfitr::SUV, suv_args)
+}
+
+scalar_or_default <- function(x, index, default) {
+  if (is.null(x) || length(x) < index || is.na(x[[index]])) {
+    default
+  } else {
+    x[[index]]
+  }
+}
+
+annotate_suvr_window <- function(tac, frameStartEnd = NULL, timeStartEnd = NULL) {
+  if (!is.null(frameStartEnd)) {
+    frameStartEnd <- c(
+      as.integer(scalar_or_default(frameStartEnd, 1, 1)),
+      as.integer(scalar_or_default(frameStartEnd, 2, nrow(tac)))
+    )
+  }
+
+  if (!is.null(timeStartEnd)) {
+    timeStartEnd <- c(
+      as.numeric(scalar_or_default(timeStartEnd, 1, min(tac$frame_start, na.rm = TRUE))),
+      as.numeric(scalar_or_default(timeStartEnd, 2, max(tac$frame_end, na.rm = TRUE)))
+    )
+  }
+
+  if (!is.null(frameStartEnd)) {
+    tac %>%
+      mutate(
+        included = frame_index >= frameStartEnd[[1]] & frame_index <= frameStartEnd[[2]],
+        window_duration = if_else(included, frame_dur, 0)
+      )
+  } else if (!is.null(timeStartEnd)) {
+    tac %>%
+      mutate(
+        window_duration = pmax(0, pmin(frame_end, timeStartEnd[[2]]) - pmax(frame_start, timeStartEnd[[1]])),
+        included = window_duration > 0
+      )
+  } else {
+    tac %>%
+      mutate(
+        window_duration = frame_dur,
+        included = TRUE
+      )
+  }
+}
+
+estimate_suvr <- function(tac, frameStartEnd = NULL, timeStartEnd = NULL) {
   tac <- tac %>%
     arrange(frame_start) %>%
     mutate(frame_index = row_number())
 
-  if (is_empty(start_point) && is_empty(end_point)) {
-    windowed <- tac %>%
-      mutate(window_duration = frame_dur,
-             included = TRUE)
-    window_start <- min(tac$frame_start, na.rm = TRUE)
-    window_end <- max(tac$frame_end, na.rm = TRUE)
-  } else if (!is_empty(start_point) && !is_empty(end_point) &&
-             as.numeric(start_point) == 0 && as.numeric(end_point) == 0) {
-    windowed <- tac %>%
-      mutate(window_duration = frame_dur,
-             included = TRUE)
-    window_start <- min(tac$frame_start, na.rm = TRUE)
-    window_end <- max(tac$frame_end, na.rm = TRUE)
-  } else if (subset_type == "frame") {
-    frame_start_index <- as.integer(start_point %||% 1)
-    frame_end_index <- as.integer(end_point %||% nrow(tac))
-    windowed <- tac %>%
-      mutate(included = frame_index >= frame_start_index & frame_index <= frame_end_index,
-             window_duration = if_else(included, frame_dur, 0))
-    window_start <- min(windowed$frame_start[windowed$included], na.rm = TRUE)
-    window_end <- max(windowed$frame_end[windowed$included], na.rm = TRUE)
-  } else if (subset_type == "time") {
-    window_start <- as.numeric(start_point %||% min(tac$frame_start, na.rm = TRUE))
-    window_end <- as.numeric(end_point %||% max(tac$frame_end, na.rm = TRUE))
-    windowed <- tac %>%
-      mutate(window_duration = pmax(0, pmin(frame_end, window_end) - pmax(frame_start, window_start)),
-             included = window_duration > 0)
-  } else {
-    windowed <- tac %>%
-      mutate(window_duration = frame_dur,
-             included = TRUE)
-    window_start <- min(tac$frame_start, na.rm = TRUE)
-    window_end <- max(tac$frame_end, na.rm = TRUE)
+  if (!is.null(frameStartEnd) && all(as.numeric(frameStartEnd) == 0)) {
+    frameStartEnd <- NULL
   }
 
+  if (!is.null(timeStartEnd) && all(as.numeric(timeStartEnd) == 0)) {
+    timeStartEnd <- NULL
+  }
+
+  target_suv <- call_kinfitr_suv(tac$TAC, tac, frameStartEnd, timeStartEnd)
+  reference_suv <- call_kinfitr_suv(tac$RefTAC, tac, frameStartEnd, timeStartEnd)
+
+  windowed <- annotate_suvr_window(tac, frameStartEnd, timeStartEnd)
+
   selected <- windowed %>%
-    filter(included, window_duration > 0)
+    filter(included)
+
+  if (!is.null(timeStartEnd)) {
+    window_start <- as.numeric(timeStartEnd[[1]])
+    window_end <- as.numeric(timeStartEnd[[2]])
+  } else if (nrow(selected) > 0) {
+    window_start <- min(selected$frame_start, na.rm = TRUE)
+    window_end <- max(selected$frame_end, na.rm = TRUE)
+  } else {
+    window_start <- NA_real_
+    window_end <- NA_real_
+  }
 
   if (nrow(selected) == 0) {
     return(list(
@@ -253,8 +316,8 @@ estimate_suvr <- function(tac, subset_type = "none", start_point = NULL, end_poi
     ))
   }
 
-  target_auc <- sum(selected$TAC * selected$window_duration, na.rm = TRUE)
-  reference_auc <- sum(selected$RefTAC * selected$window_duration, na.rm = TRUE)
+  target_auc <- target_suv$par$intSUV
+  reference_auc <- reference_suv$par$intSUV
   window_duration <- sum(selected$window_duration, na.rm = TRUE)
 
   list(
@@ -278,7 +341,7 @@ estimate_suvr <- function(tac, subset_type = "none", start_point = NULL, end_poi
 model_data <- model_data %>%
   mutate(suvr_result = future_map(
     tacs,
-    ~estimate_suvr(.x, subset_type, start_point, end_point),
+    ~estimate_suvr(.x, frameStartEnd, timeStartEnd),
     .options = furrr_options(seed = TRUE)
   )) %>%
   mutate(par = map(suvr_result, "par"),
