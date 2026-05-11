@@ -14,8 +14,8 @@ docker build -f docker/Dockerfile -t mathesong/petfit:latest .
 
 ## Docker wrapper
 
-PETFit also includes a lightweight Python wrapper, `petfit-docker`, modelled on
-the PETPrep Docker wrapper. It accepts a BIDS-App-like command line, maps host
+PETFit also includes a lightweight Python wrapper, `petfit-docker`, inspired by
+the PETPrep Docker wrapper (petprep-docker). It accepts a BIDS-App-like command line, maps host
 directories into the container, checks whether the image exists locally, and then
 runs the PETFit Docker image.
 Interactive Shiny mode is the default; use `--automatic` or `--mode automatic`
