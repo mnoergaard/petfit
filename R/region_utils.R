@@ -476,6 +476,7 @@ extract_bids_attributes_from_filename <- function(filename) {
 #' Matching rules:
 #' - EXACT: sub, seg/label must match exactly
 #' - HIERARCHICAL: morph without ses/run matches all ses/run values for that subject
+#' - FALLBACK: a single available subject/segmentation morph can be reused across sessions/runs
 #' - IGNORED: pvc, desc, rec, task not used for matching
 #' @export
 is_hierarchical_match <- function(tacs_attrs, morph_attrs) {
@@ -501,7 +502,8 @@ is_hierarchical_match <- function(tacs_attrs, morph_attrs) {
 
   # 3. HIERARCHICAL MATCH: ses
   if (!is.na(morph_attrs$ses)) {
-    # Morph has ses - must match exactly
+    # Morph has ses - exact matching is preferred. Cross-session reuse is
+    # handled in create_tacs_morph_mapping() only when the candidate is unique.
     if (is.na(tacs_attrs$ses)) return(FALSE)
     if (tacs_attrs$ses != morph_attrs$ses) return(FALSE)
   }
@@ -595,20 +597,36 @@ create_tacs_morph_mapping <- function(pipeline_folder) {
       match_type = dplyr::if_else(!is.na(seg), "seg", "label")
     )
 
-  # Join on sub and match_key, then filter for hierarchical ses/run matching
+  # Join on sub and match_key, then score candidate morph specificity.
+  # Exact matches win, morphs without ses/run are valid for all PETs, and a
+  # single available subject/segmentation morph can be reused across PET
+  # sessions/runs when no exact or entity-agnostic morph exists.
   mapping <- tacs_data %>%
     dplyr::left_join(
       morph_data %>% dplyr::select(sub, match_key, ses, run, morph_path),
       by = c("sub", "match_key"),
       relationship = "many-to-many"
     ) %>%
-    # Filter for hierarchical matching: morph ses/run must be NA or match exactly
-    dplyr::filter(
-      is.na(ses.y) | is.na(ses.x) | ses.x == ses.y,
-      is.na(run.y) | is.na(run.x) | run.x == run.y
-    ) %>%
-    # Keep first match for each tacs file
     dplyr::group_by(tacs_path) %>%
+    dplyr::mutate(
+      n_morph_candidates = dplyr::n_distinct(morph_path[!is.na(morph_path)]),
+      ses_score = dplyr::case_when(
+        is.na(morph_path) ~ 0L,
+        is.na(ses.y) ~ 1L,
+        !is.na(ses.x) & ses.x == ses.y ~ 0L,
+        n_morph_candidates == 1L ~ 2L,
+        TRUE ~ NA_integer_
+      ),
+      run_score = dplyr::case_when(
+        is.na(morph_path) ~ 0L,
+        is.na(run.y) ~ 1L,
+        !is.na(run.x) & run.x == run.y ~ 0L,
+        n_morph_candidates == 1L ~ 2L,
+        TRUE ~ NA_integer_
+      )
+    ) %>%
+    dplyr::filter(!is.na(ses_score), !is.na(run_score)) %>%
+    dplyr::arrange(ses_score, run_score, morph_path, .by_group = TRUE) %>%
     dplyr::slice(1) %>%
     dplyr::ungroup() %>%
     dplyr::select(tacs_path, morph_path)
