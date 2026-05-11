@@ -28,6 +28,18 @@ cd wrapper
 python -m pip install -e .
 ```
 
+Launch the default region definition app:
+
+```bash
+petfit-docker /path/to/your/bids /path/to/your/derivatives/petfit participant
+```
+
+The wrapper follows the BIDS App positional argument convention:
+
+```text
+petfit-docker <bids_dir> <output_dir> participant
+```
+
 Launch region definition:
 
 ```bash

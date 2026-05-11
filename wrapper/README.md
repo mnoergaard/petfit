@@ -33,6 +33,18 @@ python -m pip install -e .
 
 ## Examples
 
+Launch the default region definition app:
+
+```bash
+petfit-docker /path/to/bids /path/to/derivatives/petfit participant
+```
+
+The three positional arguments follow the BIDS App convention:
+
+```text
+petfit-docker <bids_dir> <output_dir> participant
+```
+
 Launch region definition:
 
 ```bash
@@ -44,6 +56,7 @@ PETFit output directory. These are equivalent with the default output folder
 name:
 
 ```bash
+petfit-docker /path/to/bids /path/to/derivatives/petfit participant
 petfit-docker /path/to/bids /path/to/derivatives participant --app regiondef
 petfit-docker /path/to/bids /path/to/derivatives/petfit participant --app regiondef
 ```
