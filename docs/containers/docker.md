@@ -18,6 +18,8 @@ PETFit also includes a lightweight Python wrapper, `petfit-docker`, modelled on
 the PETPrep Docker wrapper. It accepts a BIDS-App-like command line, maps host
 directories into the container, checks whether the image exists locally, and then
 runs the PETFit Docker image.
+Interactive Shiny mode is the default; use `--automatic` or `--mode automatic`
+to run a non-interactive pipeline.
 
 Install it from this checkout:
 
@@ -26,14 +28,19 @@ cd wrapper
 python -m pip install -e .
 ```
 
-Run region definition:
+Launch region definition:
 
 ```bash
 petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
   --app regiondef
 ```
 
-Run plasma-input modelling:
+The positional `output_dir` may be the derivatives root or the final PETFit
+output folder. For example, `/path/to/derivatives` and
+`/path/to/derivatives/petfit` both map to the container's derivatives root when
+using the default `--petfit-output-foldername petfit`.
+
+Launch plasma-input modelling:
 
 ```bash
 petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
@@ -41,13 +48,13 @@ petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
   --blood-dir /path/to/your/blood
 ```
 
-Launch an interactive Shiny app:
+Run plasma-input modelling automatically:
 
 ```bash
 petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
-  --app modelling_ref \
-  --mode interactive \
-  --port 3838
+  --app modelling_plasma \
+  --blood-dir /path/to/your/blood \
+  --automatic
 ```
 
 Print the generated Docker command without executing it:
@@ -57,6 +64,11 @@ petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
   --app modelling_ref \
   --dry-run
 ```
+
+The published PETFit images are currently `linux/amd64` only. The wrapper
+requests `--platform linux/amd64` by default so Docker does not emit a platform
+mismatch warning on Apple Silicon. Override this with `--platform` if a native or
+multi-architecture image is available.
 
 ## Interactive mode
 

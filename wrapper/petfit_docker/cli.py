@@ -12,10 +12,12 @@ from typing import List, Optional, Sequence
 from ._version import __version__
 
 DEFAULT_IMAGE = "mathesong/petfit:latest"
+DEFAULT_PLATFORM = "linux/amd64"
 DEFAULT_PORT = 3838
 APPS = ("regiondef", "modelling_plasma", "modelling_ref")
 MODES = ("automatic", "interactive")
 STEPS = ("datadef", "weights", "delay", "reference_tac", "model1", "model2", "model3")
+MISSING_IMAGE = "Image '{}' is missing\nWould you like to download? [Y/n] "
 
 
 class PETFitHelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
@@ -26,6 +28,9 @@ class PathAction(argparse.Action):
     """Expand user paths while preserving argparse's standard display."""
 
     def __call__(self, parser, namespace, values, option_string=None):
+        if values is None:
+            setattr(namespace, self.dest, None)
+            return
         if isinstance(values, list):
             setattr(namespace, self.dest, [str(Path(value).expanduser()) for value in values])
         else:
@@ -57,7 +62,23 @@ def _parser() -> argparse.ArgumentParser:
         "Standard options that require mapping files into the container; see petfit usage for complete descriptions",
     )
     wrapper.add_argument("--app", choices=APPS, default="regiondef", help="PETFit app to run")
-    wrapper.add_argument("--mode", choices=MODES, default="automatic", help="execution mode")
+    wrapper.add_argument("--mode", choices=MODES, default="interactive", help="execution mode")
+    wrapper.add_argument(
+        "--interactive",
+        dest="mode",
+        action="store_const",
+        const="interactive",
+        default=argparse.SUPPRESS,
+        help="run the Shiny app",
+    )
+    wrapper.add_argument(
+        "--automatic",
+        dest="mode",
+        action="store_const",
+        const="automatic",
+        default=argparse.SUPPRESS,
+        help="run the automatic pipeline",
+    )
     wrapper.add_argument("--step", choices=STEPS, help="single automatic modelling step to run")
     wrapper.add_argument("--blood-dir", action=PathAction, help="blood data directory for plasma input models")
     wrapper.add_argument("-w", "--work-dir", action=PathAction, help="working directory to mount in the container")
@@ -86,6 +107,11 @@ def _parser() -> argparse.ArgumentParser:
         help="run container as a given user/uid. A group/gid can also be assigned, i.e. --user <UID>:<GID>",
     )
     developer.add_argument("--network", help='run container with a different network driver, e.g. "none"')
+    developer.add_argument(
+        "--platform",
+        default=DEFAULT_PLATFORM,
+        help="run Docker with a specific platform; PETFit images are currently published for linux/amd64",
+    )
     developer.add_argument("--no-tty", action="store_true", help="run docker without TTY flag -it")
     developer.add_argument("--dry-run", action="store_true", help="print the Docker command without executing it")
     developer.add_argument(
@@ -101,10 +127,25 @@ def _absolute_path(path: Optional[str], *, create: bool = False) -> Optional[str
     if path is None:
         return None
 
-    resolved = Path(path).expanduser().resolve()
+    resolved = Path(path).expanduser().absolute()
     if create:
         resolved.mkdir(parents=True, exist_ok=True)
     return str(resolved)
+
+
+def _derivatives_mount_from_output(output_dir: str, petfit_output_foldername: str) -> str:
+    """Map BIDS-App-like output_dir to PETFit's derivatives mount point.
+
+    PETFit's container entry point expects the derivatives root and then appends
+    ``petfit_output_foldername`` internally. If the wrapper user passes the final
+    PETFit output directory, such as ``derivatives/petfit``, mount its parent so
+    the container does not look for ``petfit/petfit``.
+    """
+
+    output_path = Path(output_dir)
+    if output_path.name == petfit_output_foldername:
+        return str(output_path.parent)
+    return output_dir
 
 
 def _mount_argument(host_path: str, container_path: str, mode: str) -> str:
@@ -123,6 +164,11 @@ def build_docker_command(opts: argparse.Namespace) -> List[str]:
 
     bids_dir = _absolute_path(opts.bids_dir) if opts.bids_dir else None
     output_dir = _absolute_path(opts.output_dir, create=not opts.shell) if opts.output_dir else None
+    derivatives_dir = (
+        _derivatives_mount_from_output(output_dir, opts.petfit_output_foldername)
+        if output_dir
+        else None
+    )
     blood_dir = _absolute_path(opts.blood_dir) if opts.blood_dir else None
     work_dir = _absolute_path(opts.work_dir, create=True) if opts.work_dir else None
 
@@ -136,6 +182,8 @@ def build_docker_command(opts: argparse.Namespace) -> List[str]:
             raise SystemExit("the following arguments are required unless --shell is used: " + ", ".join(missing))
 
     command = ["docker", "run", "--rm"]
+    if opts.platform:
+        command.extend(["--platform", opts.platform])
     if not opts.no_tty:
         command.append("-it")
 
@@ -146,7 +194,8 @@ def build_docker_command(opts: argparse.Namespace) -> List[str]:
 
     env = list(opts.env or [])
     if opts.mode == "interactive":
-        env.append(("SHINY_PORT", str(opts.port)))
+        env.append(("PETFIT_SHINY_PORT", str(opts.port)))
+        env.append(("SHINY_SERVER_VERSION", ""))
         command.extend(["-p", f"{opts.port}:{opts.port}"])
 
     for key, value in env:
@@ -154,8 +203,8 @@ def build_docker_command(opts: argparse.Namespace) -> List[str]:
 
     if bids_dir:
         command.extend(["-v", _mount_argument(bids_dir, "/data/bids_dir", "ro")])
-    if output_dir:
-        command.extend(["-v", _mount_argument(output_dir, "/data/derivatives_dir", "rw")])
+    if derivatives_dir:
+        command.extend(["-v", _mount_argument(derivatives_dir, "/data/derivatives_dir", "rw")])
     if blood_dir:
         command.extend(["-v", _mount_argument(blood_dir, "/data/blood_dir", "ro")])
     if work_dir:
@@ -190,49 +239,88 @@ def build_docker_command(opts: argparse.Namespace) -> List[str]:
 
 
 def check_docker() -> None:
-    """Fail early if Docker is unavailable."""
+    """Fail early if Docker is unavailable, preserving Docker's own message."""
 
     try:
-        subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    except (OSError, subprocess.CalledProcessError):
-        raise SystemExit("Docker is not available. Please install Docker and ensure the daemon is running.")
+        subprocess.run(["docker", "info"], capture_output=True, text=True, check=True)
+    except OSError as error:
+        raise SystemExit(f"Could not run Docker: {error}") from error
+    except subprocess.CalledProcessError as error:
+        docker_output = (error.stderr or error.stdout or "").strip()
+        if docker_output:
+            print(docker_output, file=sys.stderr)
+        print("Could not detect memory capacity of Docker container.", file=sys.stderr)
+        raise SystemExit("Do you have permission to run docker?") from error
+
+    return None
 
 
 def image_exists(image: str) -> bool:
     """Return whether a Docker image is available locally."""
 
     try:
-        subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    except (OSError, subprocess.CalledProcessError):
+        result = subprocess.run(["docker", "images", "-q", image], stdout=subprocess.PIPE)
+    except OSError:
         return False
-    return True
+    return bool(result.stdout)
+
+
+def check_memory(image: str, platform: Optional[str] = DEFAULT_PLATFORM) -> int:
+    """Return available container memory in MB, or -1 if Docker cannot report it."""
+
+    command = ["docker", "run", "--rm"]
+    if platform:
+        command.extend(["--platform", platform])
+    command.extend(["--entrypoint=free", image, "-m"])
+
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE)
+    except OSError:
+        return -1
+
+    if result.returncode:
+        return -1
+
+    for line in result.stdout.splitlines():
+        if line.startswith(b"Mem:"):
+            return int(line.decode().split()[1])
+    return -1
 
 
 def maybe_pull_image(image: str) -> None:
-    """Offer to pull a missing image, matching the PETPrep wrapper's flow."""
+    """Offer to download a missing image before Docker pulls via ``docker run``."""
 
     if image_exists(image):
         return
 
-    answer = input(f"Image '{image}' is missing\nWould you like to download? [Y/n] ")
+    answer = input(MISSING_IMAGE.format(image))
     if answer.strip().lower() not in ("", "y", "yes"):
         raise SystemExit(f"Image '{image}' is required")
 
-    subprocess.run(["docker", "pull", image], check=True)
+    print("Downloading. This may take a while...", flush=True)
+
+
+def ensure_image_ready(image: str, platform: Optional[str] = DEFAULT_PLATFORM) -> None:
+    """Confirm image availability and that Docker can run a tiny memory probe."""
+
+    maybe_pull_image(image)
+    if check_memory(image, platform=platform) == -1:
+        print("Could not detect memory capacity of Docker container.", file=sys.stderr)
+        raise SystemExit("Do you have permission to run docker?")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _parser()
     opts = parser.parse_args(argv)
-    command = build_docker_command(opts)
 
+    if not opts.dry_run:
+        check_docker()
+        if not opts.skip_image_check:
+            ensure_image_ready(opts.image, platform=opts.platform)
+
+    command = build_docker_command(opts)
     print("RUNNING: " + shlex.join(command))
 
     if opts.dry_run:
         return 0
-
-    check_docker()
-    if not opts.skip_image_check:
-        maybe_pull_image(opts.image)
-
     return subprocess.call(command)

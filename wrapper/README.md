@@ -2,6 +2,8 @@
 
 `petfit-docker` is a lightweight Python wrapper that turns a BIDS-App-like
 command line into the matching `docker run` invocation for PETFit.
+Interactive Shiny mode is the default; use `--automatic` or
+`--mode automatic` to run a non-interactive pipeline.
 
 ```bash
 petfit-docker /path/to/bids /path/to/derivatives participant \
@@ -14,11 +16,12 @@ The command above runs:
 
 ```bash
 docker run --rm -it \
+  -p 3838:3838 \
   -v /path/to/bids:/data/bids_dir:ro \
   -v /path/to/derivatives:/data/derivatives_dir:rw \
   -v /path/to/blood:/data/blood_dir:ro \
   mathesong/petfit:latest \
-  --func modelling_plasma --mode automatic
+  --func modelling_plasma --mode interactive
 ```
 
 ## Install for development
@@ -30,13 +33,22 @@ python -m pip install -e .
 
 ## Examples
 
-Run region definition automatically:
+Launch region definition:
 
 ```bash
 petfit-docker /path/to/bids /path/to/derivatives participant --app regiondef
 ```
 
-Run plasma-input modelling:
+The positional `output_dir` can be either the derivatives root or the final
+PETFit output directory. These are equivalent with the default output folder
+name:
+
+```bash
+petfit-docker /path/to/bids /path/to/derivatives participant --app regiondef
+petfit-docker /path/to/bids /path/to/derivatives/petfit participant --app regiondef
+```
+
+Launch plasma-input modelling:
 
 ```bash
 petfit-docker /path/to/bids /path/to/derivatives participant \
@@ -44,13 +56,13 @@ petfit-docker /path/to/bids /path/to/derivatives participant \
   --blood-dir /path/to/blood
 ```
 
-Launch the reference-tissue Shiny app:
+Run plasma-input modelling automatically:
 
 ```bash
 petfit-docker /path/to/bids /path/to/derivatives participant \
-  --app modelling_ref \
-  --mode interactive \
-  --port 3838
+  --app modelling_plasma \
+  --blood-dir /path/to/blood \
+  --automatic
 ```
 
 Open a shell in the image:
@@ -58,3 +70,12 @@ Open a shell in the image:
 ```bash
 petfit-docker --shell -i mathesong/petfit:latest
 ```
+
+## Apple Silicon
+
+The published PETFit Docker images are currently `linux/amd64` only. The
+wrapper therefore requests `--platform linux/amd64` by default, which avoids
+Docker's platform-mismatch warning on Apple Silicon while running under
+emulation. If a native or multi-architecture image is published later, override
+the platform with `--platform linux/arm64` or disable the explicit platform with
+`--platform ""`.
