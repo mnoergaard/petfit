@@ -12,6 +12,52 @@ cd petfit
 docker build -f docker/Dockerfile -t mathesong/petfit:latest .
 ```
 
+## Docker wrapper
+
+PETFit also includes a lightweight Python wrapper, `petfit-docker`, modelled on
+the PETPrep Docker wrapper. It accepts a BIDS-App-like command line, maps host
+directories into the container, checks whether the image exists locally, and then
+runs the PETFit Docker image.
+
+Install it from this checkout:
+
+```bash
+cd wrapper
+python -m pip install -e .
+```
+
+Run region definition:
+
+```bash
+petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
+  --app regiondef
+```
+
+Run plasma-input modelling:
+
+```bash
+petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
+  --app modelling_plasma \
+  --blood-dir /path/to/your/blood
+```
+
+Launch an interactive Shiny app:
+
+```bash
+petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
+  --app modelling_ref \
+  --mode interactive \
+  --port 3838
+```
+
+Print the generated Docker command without executing it:
+
+```bash
+petfit-docker /path/to/your/bids /path/to/your/derivatives participant \
+  --app modelling_ref \
+  --dry-run
+```
+
 ## Interactive mode
 
 Interactive mode launches a Shiny web app accessible in your browser at `http://localhost:3838`.
