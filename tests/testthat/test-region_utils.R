@@ -48,3 +48,20 @@ test_that("create_tacs_morph_mapping does not choose an ambiguous cross-session 
 
   expect_equal(nrow(mapping), 0)
 })
+
+test_that("summarise_tacs_descriptions handles seg-only TACs without label entity", {
+  pipeline_dir <- file.path(tempdir(), "petfit_seg_only_tacs")
+  unlink(pipeline_dir, recursive = TRUE)
+
+  pet_dir <- file.path(pipeline_dir, "sub-01", "ses-test", "pet")
+  dir.create(pet_dir, recursive = TRUE, showWarnings = FALSE)
+  file.create(file.path(
+    pet_dir,
+    "sub-01_ses-test_trc-11CMC1_desc-preproc_seg-hammers_tacs.tsv"
+  ))
+
+  descriptions <- summarise_tacs_descriptions(pipeline_dir)
+
+  expect_equal(nrow(descriptions), 1)
+  expect_equal(descriptions$description, "seg-hammers_desc-preproc")
+})
