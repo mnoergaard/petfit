@@ -65,3 +65,41 @@ test_that("summarise_tacs_descriptions handles seg-only TACs without label entit
   expect_equal(nrow(descriptions), 1)
   expect_equal(descriptions$description, "seg-hammers_desc-preproc")
 })
+
+test_that("summarise_tacs_descriptions handles label-only TACs without seg entity", {
+  pipeline_dir <- file.path(tempdir(), "petfit_label_only_tacs")
+  unlink(pipeline_dir, recursive = TRUE)
+
+  pet_dir <- file.path(pipeline_dir, "sub-01", "ses-test", "pet")
+  dir.create(pet_dir, recursive = TRUE, showWarnings = FALSE)
+  file.create(file.path(
+    pet_dir,
+    "sub-01_ses-test_trc-11CMC1_desc-preproc_label-cerebellum_tacs.tsv"
+  ))
+
+  descriptions <- summarise_tacs_descriptions(pipeline_dir)
+
+  expect_equal(nrow(descriptions), 1)
+  expect_equal(descriptions$description, "label-cerebellum_desc-preproc")
+})
+
+test_that("create_tacs_list discovers seg-only TACs with matching morph files", {
+  derivatives_dir <- file.path(tempdir(), "petfit_seg_only_derivatives")
+  unlink(derivatives_dir, recursive = TRUE)
+
+  pipeline_dir <- file.path(derivatives_dir, "pmod")
+  pet_dir <- file.path(pipeline_dir, "sub-11", "ses-test", "pet")
+  anat_dir <- file.path(pipeline_dir, "sub-11", "ses-test", "anat")
+  purrr::walk(c(pet_dir, anat_dir), dir.create, recursive = TRUE, showWarnings = FALSE)
+
+  tacs_file <- file.path(pet_dir, "sub-11_ses-test_trc-11CMC1_desc-preproc_seg-hammers_tacs.tsv")
+  morph_file <- file.path(anat_dir, "sub-11_ses-test_desc-preproc_seg-hammers_morph.tsv")
+  file.create(c(tacs_file, morph_file))
+
+  tacs_list <- create_tacs_list(derivatives_dir)
+
+  expect_equal(nrow(tacs_list), 1L)
+  expect_equal(tacs_list$tacs_path, tacs_file)
+  expect_equal(tacs_list$morph_path, morph_file)
+  expect_equal(tacs_list$description, "seg-hammers_desc-preproc")
+})
